@@ -101,9 +101,9 @@ public class Clock
 
     public void Update()
     {
-        if (_timer >= 150f)
+        if (_timer >= 5f)
         {
-            _timer -= 150f;
+            _timer -= 5f;
             MinutePassed();
         }
         else
@@ -139,7 +139,9 @@ public class Settlement
     {
         Village,
         Town,
-        City
+        City,
+        Castle
+        //more and make it not binary
     }
 
     public State _BelongsTo { get; private set; }

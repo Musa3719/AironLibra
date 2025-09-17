@@ -91,7 +91,7 @@ public class LocomotionSystem : MonoBehaviour
     {
         _human = GetComponent<Humanoid>();
 
-        if(_human is Player)
+        if (_human is Player)
         {
             // slides the character through walls and edges
             frictionPhysics = new PhysicsMaterial();
@@ -128,23 +128,32 @@ public class LocomotionSystem : MonoBehaviour
     {
         if (_human._Animator == null || !_human._Animator.enabled) return;
 
-        _human._Animator.SetBool(AnimatorParameters.IsStrafing, _human._IsStrafing); ;
-        _human._Animator.SetBool(AnimatorParameters.IsSprinting, _human._IsSprinting);
-        _human._Animator.SetBool(AnimatorParameters.IsGrounded, _human._IsGrounded);
-        _human._Animator.SetFloat(AnimatorParameters.GroundDistance, groundDistance);
+        if (_human._Animator.GetBool(AnimatorParameters.IsStrafing) != _human._IsStrafing)
+            _human._Animator.SetBool(AnimatorParameters.IsStrafing, _human._IsStrafing);
+        if (_human._Animator.GetBool(AnimatorParameters.IsSprinting) != _human._IsSprinting)
+            _human._Animator.SetBool(AnimatorParameters.IsSprinting, _human._IsSprinting);
+        if (_human._Animator.GetBool(AnimatorParameters.IsGrounded) != _human._IsGrounded)
+            _human._Animator.SetBool(AnimatorParameters.IsGrounded, _human._IsGrounded);
+        if (_human._Animator.GetFloat(AnimatorParameters.GroundDistance) != groundDistance)
+            _human._Animator.SetFloat(AnimatorParameters.GroundDistance, groundDistance);
 
         if (_human._IsStrafing)
         {
-            _human._Animator.SetFloat(AnimatorParameters.InputHorizontal, _human._StopMove ? 0 : horizontalSpeed, AimingMovementSetting.animationSmooth, Time.deltaTime);
-            _human._Animator.SetFloat(AnimatorParameters.InputVertical, _human._StopMove ? 0 : verticalSpeed, AimingMovementSetting.animationSmooth, Time.deltaTime);
+            if (_human._Animator.GetFloat(AnimatorParameters.InputHorizontal) != (_human._StopMove ? 0 : horizontalSpeed))
+                _human._Animator.SetFloat(AnimatorParameters.InputHorizontal, _human._StopMove ? 0 : horizontalSpeed, AimingMovementSetting.animationSmooth, Time.deltaTime);
+            if (_human._Animator.GetFloat(AnimatorParameters.InputVertical) != (_human._StopMove ? 0 : verticalSpeed))
+                _human._Animator.SetFloat(AnimatorParameters.InputVertical, _human._StopMove ? 0 : verticalSpeed, AimingMovementSetting.animationSmooth, Time.deltaTime);
         }
         else
         {
-            _human._Animator.SetFloat(AnimatorParameters.InputHorizontal, _human._StopMove ? 0 : horizontalSpeed, FreeMovementSetting.animationSmooth, Time.deltaTime);
-            _human._Animator.SetFloat(AnimatorParameters.InputVertical, _human._StopMove ? 0 : verticalSpeed, FreeMovementSetting.animationSmooth, Time.deltaTime);
+            if (_human._Animator.GetFloat(AnimatorParameters.InputHorizontal) != (_human._StopMove ? 0 : horizontalSpeed))
+                _human._Animator.SetFloat(AnimatorParameters.InputHorizontal, _human._StopMove ? 0 : horizontalSpeed, FreeMovementSetting.animationSmooth, Time.deltaTime);
+            if (_human._Animator.GetFloat(AnimatorParameters.InputVertical) != (_human._StopMove ? 0 : verticalSpeed))
+                _human._Animator.SetFloat(AnimatorParameters.InputVertical, _human._StopMove ? 0 : verticalSpeed, FreeMovementSetting.animationSmooth, Time.deltaTime);
         }
 
-        _human._Animator.SetFloat(AnimatorParameters.InputMagnitude, _human._StopMove ? 0f : inputMagnitude, _human._IsStrafing ? AimingMovementSetting.animationSmooth : FreeMovementSetting.animationSmooth, Time.deltaTime);
+        if (_human._Animator.GetFloat(AnimatorParameters.InputMagnitude) != (_human._StopMove ? 0f : inputMagnitude))
+            _human._Animator.SetFloat(AnimatorParameters.InputMagnitude, _human._StopMove ? 0f : inputMagnitude);
     }
 
     public virtual void SetAnimatorMoveSpeed(MovementSetting speed)
@@ -153,20 +162,16 @@ public class LocomotionSystem : MonoBehaviour
         verticalSpeed = relativeInput.z * MovementSpeedMultiplier;
         horizontalSpeed = relativeInput.x * MovementSpeedMultiplier;
 
-        var newInput = new Vector2(verticalSpeed, horizontalSpeed);
-
-        if (_human._IsStrafing)
-        {
-            inputMagnitude = Mathf.Clamp(newInput.magnitude, 0, _human._IsSprinting ? AnimatorRunningSpeedDefault * 0.8f : AnimatorWalkSpeedDefault);
-        }
+        float multiplier = 1f;
+        if (speed.walkByDefault)
+            multiplier = _human._IsSprinting ? AnimatorRunningSpeedDefault : AnimatorWalkSpeedDefault;
         else
-        {
-            if (speed.walkByDefault)
-                inputMagnitude = Mathf.Clamp(newInput.magnitude, 0, _human._IsSprinting ? AnimatorRunningSpeedDefault : AnimatorWalkSpeedDefault);
-            else
-                inputMagnitude = Mathf.Clamp(_human._IsSprinting ? newInput.magnitude + 0.5f : newInput.magnitude, 0, _human._IsSprinting ? GetAnimatorSprintSpeed() : AnimatorRunningSpeedDefault);
-        }
-        
+            multiplier = _human._IsSprinting ? GetAnimatorSprintSpeed() : AnimatorRunningSpeedDefault;
+
+        var newInput = new Vector2(verticalSpeed, horizontalSpeed);
+        float lerpSpeed = _human._IsStrafing ? AimingMovementSetting.animationSmooth : FreeMovementSetting.animationSmooth;
+        lerpSpeed *= (newInput.magnitude * multiplier) < inputMagnitude ? 2f : 1f;
+        inputMagnitude = Mathf.MoveTowards(inputMagnitude, newInput.magnitude * multiplier, Time.fixedDeltaTime * lerpSpeed);
     }
 
     [System.Serializable]

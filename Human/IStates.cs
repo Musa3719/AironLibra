@@ -36,6 +36,8 @@ public class Locomotion : MovementState
         _human._LocomotionSystem._defaultCollider.enabled = true;
         _human.ChangeAnimation("Free Locomotion");
         _human._LocomotionSystem.MovementSpeedMultiplier = 1f;
+        if (_human._Animator.avatar != null)
+            _human._FootIKComponent.enabled = true;
     }
 
     public void ExitState(MovementState newState)
@@ -98,6 +100,9 @@ public class Crouch : MovementState
             _waitForMoveAfterProne = 0.75f;
         else
             _human._LocomotionSystem.MovementSpeedMultiplier = 0.9f;
+
+        if (_human._Animator.avatar != null)
+            _human._FootIKComponent.enabled = true;
     }
 
     public void ExitState(MovementState newState)
@@ -113,7 +118,6 @@ public class Crouch : MovementState
             if (_waitForMoveAfterProne <= 0f)
                 _human._LocomotionSystem.MovementSpeedMultiplier = 0.9f;
         }
-
         //Check For State Change
         if (_stateChangeCounter > 0f)
             _stateChangeCounter -= Time.deltaTime;
@@ -170,6 +174,7 @@ public class Prone : MovementState
             _human.ChangeAnimation("Prone");
 
         _human._LocomotionSystem.MovementSpeedMultiplier = 0.5f;
+        _human._FootIKComponent.enabled = false;
     }
 
     public void ExitState(MovementState newState)
@@ -198,7 +203,6 @@ public class Prone : MovementState
             MovementStateMethods.UpdateMoveDirection(_human, GameManager._Instance._MainCamera.transform);
 
         MovementStateMethods.UpdateAnimator(_human);
-
     }
     public void FixedUpdate()
     {
@@ -220,7 +224,7 @@ public class Sit : MovementState
     }
     public void EnterState(MovementState oldState)
     {
-
+        _human._FootIKComponent.enabled = false;
     }
 
     public void ExitState(MovementState newState)
@@ -246,7 +250,7 @@ public class Rest : MovementState
     }
     public void EnterState(MovementState oldState)
     {
-
+        _human._FootIKComponent.enabled = false;
     }
 
     public void ExitState(MovementState newState)

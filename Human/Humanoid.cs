@@ -3,28 +3,30 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Animations.Rigging;
 using FischlWorks;
+using UMA.CharacterSystem;
+using FIMSpace;
+
 public abstract class Humanoid : MonoBehaviour, ICanGetHurt
 {
-    public Family _Family { get; protected set; }
-
-    //public Characteristic _Characteristic { get; private set; }
-
     public Animator _Animator { get; protected set; }
     public Rigidbody _Rigidbody { get; protected set; }
     public LocomotionSystem _LocomotionSystem { get; protected set; }
-
-    public bool _IsMale { get; protected set; }
-    public string _Name { get; protected set; }
-
-    public Dictionary<Humanoid, float> _RelationsWithOtherHumans { get; protected set; }
-
-    public SkillSystem _Skills { get; private set; }
+    public csHomebrewIK _FootIKComponent { get; protected set; }
+    public LeaningAnimator _LeaninganimatorComponent { get; protected set; }
 
     //Systems
+    public string _Name { get; protected set; }
+    public bool _IsMale { get; protected set; }
+    public Class _Class { get; protected set; }
     public MovementState _MovementState { get; protected set; }
     public HandState _HandState { get; protected set; }
     public HealthSystem _HealthSystem { get; protected set; }
     public Inventory _Inventory { get; protected set; }
+    public Family _Family { get; protected set; }
+    public Group _AttachedGroup { get; protected set; }//not instance, a referance
+
+    //public Characteristic _Characteristic { get; private set; }
+
 
     public virtual Vector2 _DirectionInput { get; }
     public bool _RunInput { get; set; }
@@ -33,6 +35,7 @@ public abstract class Humanoid : MonoBehaviour, ICanGetHurt
     public bool _CrouchInput { get; set; }
     public bool _JumpInput { get; set; }
     public bool _InteractInput { get; set; }
+    public bool _AttackInput { get; set; }
 
     public bool _IsStrafing { get; set; }
     public bool _IsJumping { get; set; }
@@ -40,11 +43,10 @@ public abstract class Humanoid : MonoBehaviour, ICanGetHurt
     public bool _IsSprinting { get; set; }
     public bool _StopMove { get; set; }
 
-    public GameObject _LeftHandTargetIKPos { get; private set; }//set it
 
     [HideInInspector] public float _JumpTimer = 0.15f;
     [HideInInspector] public float _JumpCounter;
-    public float _AimSpeed { get { if (_MovementState is Crouch) return 3f; else return 5f; } }
+    public float _AimSpeed { get { if (_MovementState is Crouch) return 3f; else if (_MovementState is Prone) return 1.25f; else return 5f; } }
     public float _LastTimeRotated { get; set; }
 
     public RaycastHit _RayFoLook;
@@ -52,15 +54,16 @@ public abstract class Humanoid : MonoBehaviour, ICanGetHurt
 
 
     private float _walkSoundCounter;
-
+    private bool _umaWaitingForCompletion;
 
     protected virtual void Awake()
     {
         _Animator = GetComponentInChildren<Animator>();
         _Rigidbody = GetComponent<Rigidbody>();
         _LocomotionSystem = GetComponentInChildren<LocomotionSystem>();
-        _RelationsWithOtherHumans = new Dictionary<Humanoid, float>();
-        _Skills = new SkillSystem();
+        _FootIKComponent = GetComponentInChildren<csHomebrewIK>();
+        _LeaninganimatorComponent = GetComponentInChildren<LeaningAnimator>();
+        InitOrLoadUmaCharacter();
     }
     protected virtual void Start()
     {
@@ -72,10 +75,14 @@ public abstract class Humanoid : MonoBehaviour, ICanGetHurt
     {
         if (GameManager._Instance._IsGameStopped) return;
 
+        ControlUmaDataRuntimeLoadUnload();
         ArrangePlaneSound();
         ArrangeStamina();
         _MovementState.DoState();
         _HandState.DoState();
+
+        if (_umaWaitingForCompletion && _Animator.avatar != null)
+            UmaUpdateCompleted();
     }
     private void FixedUpdate()
     {
@@ -85,14 +92,62 @@ public abstract class Humanoid : MonoBehaviour, ICanGetHurt
     {
         ControlAnimatorRootMotion();
     }
+    private void ControlUmaDataRuntimeLoadUnload()
+    {
+        if (this is Player) return;
+
+        bool isBuildEnabled = transform.Find("char").GetComponent<DynamicCharacterAvatar>().BuildCharacterEnabled;
+        Vector3 distance = (Player._Instance.transform.position - transform.position);
+        distance.y = 0f;
+
+        if (!isBuildEnabled && distance.magnitude < 40f)
+            EnableHumanData();
+        else if (isBuildEnabled && distance.magnitude > 60f)
+            DisableHumanData();
+    }
     public void UmaCreated()
     {
-        //init
+        //for init
         UmaUpdated();
     }
     public void UmaUpdated()
     {
+        _umaWaitingForCompletion = true;
+    }
+    public void UmaUpdateCompleted()
+    {
+        _umaWaitingForCompletion = false;
         GetComponentInChildren<csHomebrewIK>().StartForUma();
+    }
+    public void EnableHumanData()
+    {
+        if (!(_MovementState is Prone))
+            _FootIKComponent.enabled = true;
+        _Animator.enabled = true;
+        _LeaninganimatorComponent.enabled = true;
+        transform.Find("char").GetComponent<DynamicCharacterAvatar>().BuildCharacterEnabled = true;
+    }
+    public void DisableHumanData()
+    {
+        _FootIKComponent.enabled = false;
+        _Animator.enabled = false;
+        _LeaninganimatorComponent.enabled = false;
+        SkinnedMeshRenderer smr = transform.Find("char").Find("UMARenderer")?.GetComponent<SkinnedMeshRenderer>();
+        if (smr != null && smr.sharedMesh != null)
+        {
+            Destroy(smr.sharedMesh);
+            smr.sharedMesh = null;
+        }
+
+        transform.Find("char").GetComponent<DynamicCharacterAvatar>().BuildCharacterEnabled = false;
+        UMA.UMAData data = transform.Find("char").GetComponent<DynamicCharacterAvatar>().umaData;
+        data.CleanAvatar();
+        data.CleanMesh(false);
+        data.CleanTextures();
+    }
+    private void InitOrLoadUmaCharacter()
+    {
+
     }
     public void ControlAnimatorRootMotion()
     {
@@ -105,12 +160,6 @@ public abstract class Humanoid : MonoBehaviour, ICanGetHurt
         }
     }
 
-    public Vector3 GetVelocity()
-    {
-        if (this is NPC && _Rigidbody.isKinematic)
-            return (this as NPC)._Agent.velocity;
-        return _Rigidbody.linearVelocity;
-    }
     private void ArrangeStartingStates()
     {
         //arrange 2 states, health system and inventory from saves or create it
@@ -140,46 +189,80 @@ public abstract class Humanoid : MonoBehaviour, ICanGetHurt
         _HandState.EnterState(oldState);
     }
 
-    public void ChangeRelationsWithHumans(Humanoid human, float value)
-    {
-        if (!_RelationsWithOtherHumans.ContainsKey(human))
-        {
-            _RelationsWithOtherHumans.Add(human, 0f);
-        }
-
-        _RelationsWithOtherHumans[human] += value;
-        _RelationsWithOtherHumans[human] = Mathf.Clamp(_RelationsWithOtherHumans[human], -100f, 100f);
-    }
-    
     private void ArrangePlaneSound()
     {
-        Physics.Raycast(transform.position - Vector3.up, -Vector3.up, out RaycastHit hit, 1f, GameManager._Instance._TerrainAndWaterMask);
+        Vector3 dist = (Player._Instance.transform.position - transform.position);
+        dist.y = 0f;
+        if (dist.magnitude > 50f) return;
 
+        Physics.Raycast(transform.position + Vector3.up, -Vector3.up, out RaycastHit hit, 2f, GameManager._Instance._TerrainAndSolidMask);
         float speed = _Rigidbody.linearVelocity.magnitude;
-        if (hit.collider != null && hit.collider.GetComponent<PlaneSound>() != null)
+        if (hit.collider != null)
         {
-            while (_walkSoundCounter <= 0f)//not using if because it could be lower than -1 when frame drops etc
+            if (hit.collider.gameObject.layer == LayerMask.NameToLayer("Water"))
             {
-                SoundManager._Instance.PlayPlaneSound(hit.collider.GetComponent<PlaneSound>().PlaneSoundType, transform.position, speed);
-                _walkSoundCounter += 1f;
+                if (_walkSoundCounter <= 0f)
+                {
+                    SoundManager._Instance.PlayPlaneSound(PlaneSoundType.Swimming, transform.position, speed);
+                    _walkSoundCounter += 1f;
+                }
             }
-
-            _walkSoundCounter -= Time.deltaTime * speed / 2.675f;
+            else if (hit.collider.gameObject.layer == LayerMask.NameToLayer("Terrain"))
+            {
+                if (_walkSoundCounter <= 0f)
+                {
+                    SoundManager._Instance.PlayPlaneSound(GetPlaneSoundTypeFromTerrain(hit), transform.position, speed);
+                    _walkSoundCounter += 1f;
+                }
+            }
+            else if (hit.collider.GetComponent<PlaneSound>() != null)
+            {
+                if (_walkSoundCounter <= 0f)
+                {
+                    SoundManager._Instance.PlayPlaneSound(hit.collider.GetComponent<PlaneSound>().PlaneSoundType, transform.position, speed);
+                    _walkSoundCounter += 1f;
+                }
+            }
         }
+        _walkSoundCounter -= Time.deltaTime * 1.65f * speed;
+
     }
+    private PlaneSoundType GetPlaneSoundTypeFromTerrain(RaycastHit hit)
+    {
+        if (hit.collider == null) return PlaneSoundType.Dirt;
+        Terrain terrain = hit.collider.GetComponent<Terrain>();
+        if (terrain == null) return PlaneSoundType.Dirt;
+
+        Vector3 localPos = hit.transform.InverseTransformPoint(hit.point);
+        int x = Mathf.FloorToInt(localPos.x / terrain.terrainData.size.x * terrain.terrainData.alphamapWidth);
+        int y = Mathf.FloorToInt(localPos.z / terrain.terrainData.size.z * terrain.terrainData.alphamapHeight);
+        
+        //Debug.Log(hit.collider.gameObject.GetComponent<TerrainBehaviour>()._SoundTypeMap[x, y]);
+        return hit.collider.gameObject.GetComponent<TerrainBehaviour>()._SoundTypeMap[x, y];
+    }
+
     private void ArrangeStamina()
     {
         if (_IsSprinting)
         {
-            if (_LocomotionSystem.FreeMovementSetting.walkByDefault)
-                _LocomotionSystem.Stamina -= Time.deltaTime * 2f;
+            if (_IsStrafing)
+            {
+                if (_LocomotionSystem.AimingMovementSetting.walkByDefault)
+                    _LocomotionSystem.Stamina -= Time.deltaTime * 1.5f;
+                else
+                    _LocomotionSystem.Stamina -= Time.deltaTime * 10f;
+            }
             else
-                _LocomotionSystem.Stamina -= Time.deltaTime * 7f;
-
+            {
+                if (_LocomotionSystem.FreeMovementSetting.walkByDefault)
+                    _LocomotionSystem.Stamina -= Time.deltaTime * 1.5f;
+                else
+                    _LocomotionSystem.Stamina -= Time.deltaTime * 10f;
+            }
         }
         else
         {
-            _LocomotionSystem.Stamina += Time.deltaTime * 7f;
+            _LocomotionSystem.Stamina += Time.deltaTime * 5f;
         }
     }
     public void LookAt(Vector3 pos, float lerpSpeed = 10f)
@@ -201,7 +284,7 @@ public abstract class Humanoid : MonoBehaviour, ICanGetHurt
         //LocomotionSystem.FreeMovementSetting.sprintSpeed = 5.5f * maxSpeedMultiplier;
 
         //Arrange Stamina
-        float maxStamina = 60f;//get exhaust level, str and health system
+        float maxStamina = 220f;//get exhaust level, str and health system
         _LocomotionSystem.MaxStamina = maxStamina;
         _LocomotionSystem.Stamina = maxStamina;
 

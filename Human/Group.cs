@@ -4,34 +4,22 @@ using UnityEngine;
 
 public class Group
 {
-    public enum GroupTypeEnum
-    {
-        Landless,
-        VillageChief,
-        TownOfficer,
-        CityMayor,
-        StateOwner,
-        Outlaw
-    }
-
-    public Group(Humanoid leader, string name, State state = null, List<Humanoid> members = null, Settlement settlement = null, Dictionary<Group, float> relations = null)
+    public Group(Humanoid leader, string name, State state = null, List<Humanoid> members = null, Settlement settlement = null)
     {
         _Leader = leader;
         _Name = name;
         _Members = members;
         _OwnedSettlement = settlement;
-        _RelationsWithOtherGroups = relations;
         _State = state;
     }
 
     public string _Name { get; private set; }
-    public GroupTypeEnum _GroupType { get; private set; }
     public Humanoid _Leader { get; private set; }
     public List<Humanoid> _Members { get; private set; }
 
     public State _State;
     public float _Prestige { get; private set; }
-    public Dictionary<Group, float> _RelationsWithOtherGroups { get; private set; }
+    //public Dictionary<Group, float> _RelationsWithOtherGroups { get; private set; }
 
     public Settlement _OwnedSettlement { get; private set; }
 
@@ -41,27 +29,7 @@ public class Group
 
         return human == _Leader;
     }
-    public int GetGroupLimit()
-    {
-        switch (_GroupType)
-        {
-            case GroupTypeEnum.Landless:
-                return 4;
-            case GroupTypeEnum.VillageChief:
-                return 5;
-            case GroupTypeEnum.TownOfficer:
-                return 6;
-            case GroupTypeEnum.CityMayor:
-                return 8;
-            case GroupTypeEnum.StateOwner:
-                return 40;
-            case GroupTypeEnum.Outlaw:
-                return 40;
-            default:
-                return 4;
-        }
-    }
-    public void ChangeRelationsWithFaction(Group group, float value)
+    /*public void ChangeRelationsWithFaction(Group group, float value)
     {
         if (!_RelationsWithOtherGroups.ContainsKey(group))
         {
@@ -70,7 +38,7 @@ public class Group
 
         _RelationsWithOtherGroups[group] += value;
         _RelationsWithOtherGroups[group] = Mathf.Clamp(_RelationsWithOtherGroups[group], -100f, 100f);
-    }
+    }*/
     
 }
 public class State

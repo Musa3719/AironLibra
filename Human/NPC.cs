@@ -3,168 +3,306 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.AI;
 
-public abstract class NPC : Humanoid
+public class NPC : Humanoid
 {
-    public Job _Job;
-
-    public bool _IsOnPlayersTeam { get; protected set; }
-    public bool _IsOnPlayersActiveGroup { get; protected set; }
-    public NavMeshAgent _Agent { get; protected set; }
-
-    public override Vector2 _DirectionInput => _directionInputFromPath;
+    public override Vector2 _DirectionInput => _directionCurrent;
+    public Vector3 _LastCornerFromPath { get; private set; }
+    private Vector2 _directionCurrent;
     private Vector2 _directionInputFromPath;
     private List<Vector3> _cornersFromPath;
-    private Vector3 _lastCornerFromPath;
     private NavMeshPath _currentPath;
+    private bool _isPathEnded;
+    private float _segmentationMagnitude = 100f;
+    private Coroutine _segmentatePathCoroutine;
+    private float _stuckOnPathTimer;
+    private float _stuckArrangingTimer;
+    private Vector3 _stuckArrangingPosition;
+    private float _stuckThreshold = 2f;
+    private float _lastTimeJumped;
+    private float _nextPositionCheckCounter;
+    private float _nextPositionCheckThreshold = 0.1f;
+    private float _cliffCheckForwardForDir;
+    private float _cliffCheckForwardForVel;
+    private float _tryToCreatePathTimer;
+    private float _tryToCreatePathThreshold = 0.5f;
 
     public Vector3 _MoveTargetPosition { get; set; }
     public Vector3 _AimPosition { get; set; }
-    public bool _WantsToJump { get; set; }
-    public bool _WantsToAttack { get; set; }
-
     public bool _IsOnLinkMovement { get; private set; }
 
     protected void Awake()
     {
         base.Awake();
-        transform.localScale *= Random.Range(0.98f, 1.02f);
-        _Agent = GetComponent<NavMeshAgent>();
         _cornersFromPath = new List<Vector3>();
+
+        _Class = new Peasant();//
     }
     protected void Start()
     {
+        Stop();
         base.Start();
-        NavmeshToRigidbody();
     }
-   
+
     protected void Update()
     {
         if (GameManager._Instance._IsGameStopped) return;
 
+        //disable inputs
+        _JumpInput = false;
+        _CrouchInput = false;
+        _InteractInput = false;
+
+        ArrangeDirection();
+        ArrangeStuck();
+        CheckNextPosition();
+
         base.Update();
-        //IsLookingInput=getinput
+
+        //testing
+        if (Input.GetKeyDown(KeyCode.M))
+            ArrangeNewMovementTarget(GameObject.Find("TargetPositionTest").transform.position);
+        if (Input.GetKey(KeyCode.N))
+            _SprintInput = true;
+        else
+            _SprintInput = false;
+
     }
-
-    private void ArrangeNewMovementTarget(Vector3 targetPos)
+    private void ArrangeDirection()
     {
-        _MoveTargetPosition = targetPos;
-        _currentPath = new NavMeshPath();
-        NavMesh.CalculatePath(transform.position, _MoveTargetPosition, NavMesh.AllAreas, _currentPath);
-
-        _cornersFromPath.Clear();
-        foreach (var corner in _currentPath.corners)
+        if (_isPathEnded)
         {
-            _cornersFromPath.Add(corner);
+            _directionCurrent = Vector2.Lerp(_directionCurrent, Vector2.zero, Time.deltaTime * 12f);
+            return;
         }
-        if (_cornersFromPath.Count > 1)
+
+        _directionInputFromPath = new Vector2(_LastCornerFromPath.x - transform.position.x, _LastCornerFromPath.z - transform.position.z).normalized;
+        if (Vector2.Dot(_directionCurrent, _directionInputFromPath) < 0.1f)
+            _directionCurrent = Vector2.zero;
+        _directionCurrent = Vector2.Lerp(_directionCurrent, _directionInputFromPath, Time.deltaTime * 8f).normalized;
+    }
+    private void ArrangeStuck()
+    {
+        if (!_isPathEnded)
         {
-            _lastCornerFromPath = _cornersFromPath[1];
-            _directionInputFromPath = new Vector2(_cornersFromPath[1].x - transform.position.x, _cornersFromPath[1].z - transform.position.z).normalized;
-            _cornersFromPath.RemoveAt(1);
-            _cornersFromPath.RemoveAt(0);
+            if (_Rigidbody.linearVelocity.magnitude < 0.5f || _stuckArrangingTimer > 0f)
+                _stuckOnPathTimer += Time.deltaTime;
+            else
+                _stuckOnPathTimer = 0f;
+
+            if (_stuckArrangingTimer > 0f)
+                _stuckArrangingTimer -= Time.deltaTime;
+
+            if (_stuckOnPathTimer > _stuckThreshold * 0.5f && _stuckArrangingTimer == 0f)
+            {
+                _stuckArrangingTimer = 1f;
+                _stuckArrangingPosition = transform.position;
+                _stuckArrangingPosition.y = 0f;
+                TryJump();
+            }
+            if (_stuckOnPathTimer > _stuckThreshold)
+            {
+                _stuckArrangingTimer = 0f;
+                _stuckOnPathTimer = 0f;
+                if ((_stuckArrangingPosition - new Vector3(transform.position.x, 0f, transform.position.z)).magnitude < 0.2f)
+                {
+                    Vector3 target = _MoveTargetPosition;
+                    Stop();
+                    ArrangeNewMovementTarget(target);
+                }
+
+            }
+        }
+    }
+    private void CheckNextPosition()
+    {
+        if (_nextPositionCheckCounter <= _nextPositionCheckThreshold)
+        {
+            _nextPositionCheckCounter += Time.deltaTime;
         }
         else
         {
+            _nextPositionCheckCounter = 0f;
+
+            //check for cliff
+            bool isStopping;
+            Vector3 directionInput = new Vector3(_Rigidbody.linearVelocity.x, 0f, _Rigidbody.linearVelocity.z);
+            _cliffCheckForwardForVel = Mathf.Lerp(_cliffCheckForwardForVel, directionInput.magnitude < 0.1f ? 1f : (_IsSprinting ? 3.25f : 1.5f), Time.deltaTime * 2f);
+            Debug.DrawRay(transform.position + Vector3.up * 0.8f + directionInput.normalized * _cliffCheckForwardForVel, -Vector3.up);
+            Physics.Raycast(transform.position + Vector3.up * 0.8f + directionInput.normalized * _cliffCheckForwardForVel, -Vector3.up, out RaycastHit hit, 8f, GameManager._Instance._TerrainAndSolidMask);
+            isStopping = hit.collider == null;
+
+            directionInput = GameManager._Instance.Vector2ToVector3(_DirectionInput);
+            _cliffCheckForwardForDir = Mathf.Lerp(_cliffCheckForwardForDir, directionInput.magnitude < 0.1f ? 1f : (_IsSprinting ? 3.25f : 1.5f), Time.deltaTime * 2f);
+            Debug.DrawRay(transform.position + Vector3.up * 0.8f + directionInput.normalized * _cliffCheckForwardForDir, -Vector3.up);
+            Physics.Raycast(transform.position + Vector3.up * 0.8f + directionInput.normalized * _cliffCheckForwardForDir, -Vector3.up, out hit, 8f, GameManager._Instance._TerrainAndSolidMask);
+            isStopping = isStopping ? isStopping : hit.collider == null;
+
+            if (isStopping)
+            {
+                Vector3 target = _MoveTargetPosition;
+                Stop();
+                ArrangeNewMovementTarget(target);
+                return;
+            }
+
+            //check for obstacle
+            if (Physics.Raycast(transform.position + Vector3.up * 0.2f, -Vector3.up, out hit, 1f, GameManager._Instance._TerrainAndSolidMask))
+            {
+                Vector3 rayDirection = new Vector3(_Rigidbody.linearVelocity.x, 0f, _Rigidbody.linearVelocity.z).normalized;
+                if (hit.normal != Vector3.zero)
+                {
+                    rayDirection = Vector3.Cross(Vector3.Cross(hit.normal, rayDirection), hit.normal).normalized;
+                }
+
+                if (Physics.Raycast(transform.position + Vector3.up * 0.2f, rayDirection, out hit, Mathf.Clamp(_Rigidbody.linearVelocity.magnitude * 0.3f, 1f, float.MaxValue), GameManager._Instance._TerrainAndSolidMask))
+                {
+                    if (hit.collider != null && Vector3.Dot(hit.normal, Vector3.up) < 0.3f)
+                    {
+                        Physics.Raycast(transform.position + Vector3.up * 0.8f, rayDirection, out hit, Mathf.Clamp(_Rigidbody.linearVelocity.magnitude * 0.3f, 1f, float.MaxValue), GameManager._Instance._TerrainAndSolidMask);
+                        if (hit.collider == null)
+                            TryJump();
+                    }
+                }
+            }
+        }
+    }
+    private void TryJump()
+    {
+        if (_lastTimeJumped + 1f < Time.time)
+        {
+            _lastTimeJumped = Time.time;
+            _JumpInput = true;
+        }
+    }
+
+    private void ActivateCombatMode()
+    {
+        bool conditions = _MovementState is Locomotion;
+        if (conditions)
+            _IsInCombatMode = true;
+    }
+    private void DisableCombatMode()
+    {
+        bool conditions = _MovementState is Locomotion;
+        if (conditions)
+            _IsInCombatMode = false;
+    }
+    public void Stop()
+    {
+        if (_segmentatePathCoroutine != null)
+            StopCoroutine(_segmentatePathCoroutine);
+        _cornersFromPath.Clear();
+        _MoveTargetPosition = transform.position;
+        _LastCornerFromPath = transform.position;
+        _directionInputFromPath = Vector2.zero;
+        _directionCurrent = Vector2.zero;
+        _isPathEnded = true;
+    }
+    private void ArrangeNewMovementTarget(Vector3 targetPos)
+    {
+        _MoveTargetPosition = targetPos;
+        GameManager._Instance.CoroutineCall(ref _segmentatePathCoroutine, SegmentatePath(), this);
+    }
+    private IEnumerator SegmentatePath()
+    {
+        bool breakCoroutine = true;
+        while (true)
+        {
+            if (_tryToCreatePathTimer < _tryToCreatePathThreshold)
+            {
+                _tryToCreatePathTimer += Time.deltaTime;
+                yield return null;
+                continue;
+            }
+            _tryToCreatePathTimer = 0f;
+
+            if (!_isPathEnded) { yield return null; continue; }
+            Vector3 dist = (_MoveTargetPosition - transform.position);
+            if (new Vector3(dist.x, 0f, dist.z).magnitude < 1f) break;
+
+            breakCoroutine = true;
+            Vector3 segmentatedTarget = _MoveTargetPosition;
+            if (new Vector3(dist.x - transform.position.x, 0f, dist.z - transform.position.z).magnitude > _segmentationMagnitude)
+            {
+                breakCoroutine = false;
+                segmentatedTarget = transform.position + new Vector3((_MoveTargetPosition - transform.position).x, transform.position.y, (_MoveTargetPosition - transform.position).z).normalized * _segmentationMagnitude;
+                segmentatedTarget = GetWalkableTerrainPosition(segmentatedTarget);
+            }
+            _currentPath = new NavMeshPath();
+            NavMesh.CalculatePath(transform.position, segmentatedTarget, NavMesh.AllAreas, _currentPath);
+            _isPathEnded = false;
             _cornersFromPath.Clear();
-            _directionInputFromPath = Vector2.zero;
+            _nextPositionCheckCounter = 1f;
+            foreach (var corner in _currentPath.corners)
+            {
+                _cornersFromPath.Add(corner);
+            }
+            if (_cornersFromPath.Count > 1)
+            {
+                _LastCornerFromPath = _cornersFromPath[1];
+                _directionInputFromPath = new Vector2(_cornersFromPath[1].x - transform.position.x, _cornersFromPath[1].z - transform.position.z).normalized;
+                _cornersFromPath.RemoveAt(1);
+                _cornersFromPath.RemoveAt(0);
+            }
+            else
+            {
+                _cornersFromPath.Clear();
+                _directionInputFromPath = Vector2.zero;
+            }
+            if (breakCoroutine)
+            {
+                yield break;
+            }
+
+            yield return null;
         }
 
     }
+    private Vector3 GetWalkableTerrainPosition(Vector3 segmentatedPos)
+    {
+        Vector3 rayPos = segmentatedPos;
+        float radiusStep = 2f;
+        int angleStep = 30;
+        float radius, angle;
+        for (int i = 0; i < 100; i++)
+        {
+            if (Physics.Raycast(rayPos + Vector3.up * 1000f, -Vector3.up, out RaycastHit hit, 1200f, GameManager._Instance._TerrainAndSolidMask))
+            {
+                if (hit.collider == null) continue;
+
+                if (hit.collider.gameObject.layer == LayerMask.NameToLayer("Terrain"))
+                {
+                    segmentatedPos.y = hit.point.y;
+                    return segmentatedPos;
+                }
+            }
+            radius = (i / (360 / angleStep)) * radiusStep;
+            angle = (i % (360 / angleStep)) * angleStep * Mathf.Deg2Rad;
+            rayPos = segmentatedPos + new Vector3(Mathf.Cos(angle), 0, Mathf.Sin(angle)) * radius;
+        }
+
+        Debug.LogError("Segmentation Ray Did Not Hit!");
+        return segmentatedPos;
+    }
     public void ArrangeMovementCorners()
     {
-        float dist = (_lastCornerFromPath - transform.position).magnitude;
-        if (dist < 1.5f)
+        float dist = (_LastCornerFromPath - transform.position).magnitude;
+        if (dist < 0.2f)
         {
             if (_cornersFromPath.Count > 0)
             {
-                _lastCornerFromPath = _cornersFromPath[0];
+                _LastCornerFromPath = _cornersFromPath[0];
                 _directionInputFromPath = new Vector2(_cornersFromPath[0].x - transform.position.x, _cornersFromPath[0].z - transform.position.z).normalized;
                 _cornersFromPath.RemoveAt(0);
             }
             else
             {
+                _LastCornerFromPath = transform.position;
                 _directionInputFromPath = Vector2.zero;
+                _isPathEnded = true;
             }
-            
+
         }
     }
-
-    public void NavmeshToRigidbody()
-    {
-        _Agent.updatePosition = false;
-        _Agent.updateRotation = false;
-        _Agent.updateUpAxis = false;
-        _Agent.isStopped = true;
-        _Rigidbody.isKinematic = false;
-        _Rigidbody.useGravity = true;
-    }
-    public void RigidbodyToNavmesh()
-    {
-        _Agent.updatePosition = true;
-        _Agent.updateRotation = false;
-        _Agent.updateUpAxis = false;
-        _Agent.isStopped = false;
-        _Rigidbody.isKinematic = true;
-        _Rigidbody.useGravity = false;
-    }
 }
 
-public abstract class Job
-{
-    public string _Name { get; protected set; }
-    public float _Experience { get; protected set; }
-    public float _Income { get; protected set; }
-    public WeeklyRoutine _WorkRoutine;
-    public void SetWeeklyRoutine()
-    {
-        /*WorkRoutine = new WeeklyRoutine();
-
-        WorkRoutine.monday.startTime = 7;
-        WorkRoutine.monday.endTime = 19;
-
-        WorkRoutine.tuesday.startTime = 7;
-        WorkRoutine.tuesday.endTime = 19;
-
-        WorkRoutine.wednesday.startTime = 7;
-        WorkRoutine.wednesday.endTime = 19;
-
-        WorkRoutine.thursday.startTime = 7;
-        WorkRoutine.thursday.endTime = 19;
-
-        WorkRoutine.friday.startTime = 7;
-        WorkRoutine.friday.endTime = 19;
-
-        WorkRoutine.saturday.startTime = 9;
-        WorkRoutine.saturday.endTime = 17;
-
-        WorkRoutine.sunday.startTime = 9;
-        WorkRoutine.sunday.endTime = 14;*/
-    }
-    public void Work()
-    {
-
-    }
-    public void GoToWorkLocation()
-    {
-
-    }
-    public void GoToHome()
-    {
-
-    }
-}
-public struct WeeklyRoutine
-{
-    public DailyRoutine monday;
-    public DailyRoutine tuesday;
-    public DailyRoutine wednesday;
-    public DailyRoutine thursday;
-    public DailyRoutine friday;
-    public DailyRoutine saturday;
-    public DailyRoutine sunday;
-}
-public struct DailyRoutine
-{
-    public int startTime;
-    public int endTime;
-}

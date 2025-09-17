@@ -4,9 +4,9 @@ using UnityEngine;
 
 public static class MovementStateMethods
 {
-    public static void Rotate60Degrees(Humanoid human, bool isRight)
+    public static void TriggerRotateAnimation(Humanoid human, bool isRight)
     {
-        if (human._LastTimeRotated + 0.5f > Time.time) return;
+        if (human._LastTimeRotated + 1f > Time.time) return;
 
         human._LastTimeRotated = Time.time;
         if (isRight)
@@ -17,28 +17,15 @@ public static class MovementStateMethods
         {
             human.ChangeAnimation("TurnLeftLocomotion");
         }
-        GameManager._Instance.CoroutineCall(ref human._RotateAroundCoroutine, RotateCoroutine(human, isRight), GameManager._Instance);
-    }
-    private static IEnumerator RotateCoroutine(Humanoid human, bool isRight)
-    {
-        float startTime = Time.time;
-        float startY = human.transform.localEulerAngles.y;
-        while (startTime + 0.35f > Time.time)
-        {
-            if (human._Rigidbody.linearVelocity.magnitude > 0.1f)
-            {
-                human.ChangeAnimation("Strafing Movement");
-                yield break;
-            }
-
-            human.transform.Rotate(isRight ? Vector3.up : -Vector3.up, Time.deltaTime * 60f / 0.35f, Space.Self);
-            yield return null;
-        }
     }
     public static void ControlLocomotionType(Humanoid human)
     {
         bool isInCrouch = human._MovementState is Crouch;
         bool isAiming = human._IsInCombatMode;
+
+        if (human._DirectionInput.sqrMagnitude > 0.1f && CanRunWithStamina(human) && human._IsGrounded && (human._RunInput || human._SprintInput))
+            isAiming = false;
+
         if (!human._IsGrounded) isAiming = false;
 
         if (isAiming)
@@ -69,19 +56,24 @@ public static class MovementStateMethods
 
     public static void ControlRotationType(Humanoid human, float rotationSpeed = 0f)
     {
-        bool isMoving = human._DirectionInput != Vector2.zero;
-        //bool isMoving = (human is Player) ? (human as Player).DirectionInput != Vector2.zero : human.GetVelocity() != Vector3.zero;
+        human._LocomotionSystem.inputSmooth = Vector3.Lerp(human._LocomotionSystem.inputSmooth, human._DirectionInput, (human._IsStrafing ? human._LocomotionSystem.AimingMovementSetting.movementSmooth : human._LocomotionSystem.FreeMovementSetting.movementSmooth) * Time.fixedDeltaTime);
 
-        if (isMoving)
+        if (human._IsStrafing)
         {
-            // calculate input smooth
-            Vector3 targetSmooth = human._DirectionInput;
-            human._LocomotionSystem.inputSmooth = Vector3.Lerp(human._LocomotionSystem.inputSmooth, targetSmooth, (human._IsStrafing ? human._LocomotionSystem.AimingMovementSetting.movementSmooth : human._LocomotionSystem.FreeMovementSetting.movementSmooth) * Time.deltaTime);
+            Vector3 aimTargetDirection = (human is Player pl) ? (pl._LookAtForCam.position - human.transform.position).normalized : ((human as NPC)._AimPosition - human.transform.position).normalized;
+            Vector2 first = new Vector2(human.transform.forward.x, human.transform.forward.z);
+            Vector2 second = new Vector2(aimTargetDirection.x, aimTargetDirection.z);
+            float angle = Vector2.Angle(first, second);
+            bool isRight = Vector2.SignedAngle(first, second) < 0 ? true : false;
 
-            if (!human._IsStrafing)
-                RotateToDirection(human._LocomotionSystem.moveDirection, human);
+            if (human._Rigidbody.linearVelocity.magnitude >= 0.1f || angle > 25f || human._LastTimeRotated + 0.25f > Time.time)
+                RotateToDirection(aimTargetDirection, human);
 
+            if (angle > 25f && human._Rigidbody.linearVelocity.magnitude < 0.1f)
+                MovementStateMethods.TriggerRotateAnimation(human, isRight);
         }
+        else
+            RotateToDirection(human._LocomotionSystem.moveDirection, human);
     }
 
     public static void UpdateAnimator(Humanoid human)
@@ -92,39 +84,38 @@ public static class MovementStateMethods
     {
         if (human is Player)
         {
-            float magnitude = human._DirectionInput.magnitude;
-            if (magnitude <= 0.01)
+            if (human._DirectionInput.magnitude <= 0.01)
             {
                 human._LocomotionSystem.moveDirection = Vector3.Lerp(human._LocomotionSystem.moveDirection, Vector3.zero, (human._IsStrafing ? human._LocomotionSystem.AimingMovementSetting.movementSmooth : human._LocomotionSystem.FreeMovementSetting.movementSmooth) * Time.deltaTime);
                 return;
             }
-        }
-        else
-        {
-            (human as NPC).ArrangeMovementCorners();
-            Vector3 dist = (human as NPC)._MoveTargetPosition - human.transform.position;
-            float magnitude = dist.magnitude;
-            if (magnitude <= 1f)
-            {
-                human._LocomotionSystem.moveDirection = Vector3.Lerp(human._LocomotionSystem.moveDirection, Vector3.zero, (human._IsStrafing ? human._LocomotionSystem.AimingMovementSetting.movementSmooth : human._LocomotionSystem.FreeMovementSetting.movementSmooth) * Time.deltaTime);
-                return;
-            }
-        }
 
-        //get the right-facing direction of the referenceTransform
-        Vector3 right = human is Player ? referenceTransform.right : Vector3.right;
-        right.y = 0;
-        //get the forward direction relative to referenceTransform Right
-        Vector3 forward = Quaternion.AngleAxis(-90, Vector3.up) * right;
-        // determine the direction the player will face based on input and the referenceTransform's right and forward directions
-        human._LocomotionSystem.moveDirection = (human._LocomotionSystem.inputSmooth.x * right) + (human._LocomotionSystem.inputSmooth.y * forward);
+            //get the right-facing direction of the referenceTransform
+            Vector3 right = referenceTransform.right;
+            right.y = 0;
+            //get the forward direction relative to referenceTransform Right
+            Vector3 forward = Quaternion.AngleAxis(-90, Vector3.up) * right;
+            Vector3 up = human._MovementState is Prone ? human.transform.forward : Vector3.zero;
+            // determine the direction the player will face based on input and the referenceTransform's right and forward directions
+            human._LocomotionSystem.moveDirection = (human._LocomotionSystem.inputSmooth.x * right) + (human._LocomotionSystem.inputSmooth.y * forward) + new Vector3(0f, up.y, 0f);
+        }
+        else if (human is NPC npc)
+        {
+            npc.ArrangeMovementCorners();
+            if (npc._DirectionInput.magnitude < 0.1f)
+            {
+                npc._LocomotionSystem.moveDirection = Vector3.Lerp(npc._LocomotionSystem.moveDirection, Vector3.zero, (npc._IsStrafing ? npc._LocomotionSystem.AimingMovementSetting.movementSmooth : npc._LocomotionSystem.FreeMovementSetting.movementSmooth) * Time.deltaTime);
+                return;
+            }
+            npc._LocomotionSystem.moveDirection = new Vector3(GameManager._Instance.Vector2ToVector3(npc._DirectionInput).normalized.x, 0f, GameManager._Instance.Vector2ToVector3(npc._DirectionInput).normalized.z);
+        }
     }
 
     private static bool IsMovingForward(Humanoid human)
     {
         Vector2 first = new Vector2(human._Rigidbody.linearVelocity.x, human._Rigidbody.linearVelocity.z).normalized;
         Vector2 second = new Vector2(human.transform.forward.x, human.transform.forward.z).normalized;
-        return Vector2.Dot(first, second) > 0.4f;
+        return Vector2.Dot(first, second) > 0.85f;
     }
     private static bool CanRunWithStamina(Humanoid human)
     {
@@ -149,7 +140,7 @@ public static class MovementStateMethods
 
         if ((sprintInput || runInput) && sprintConditions)
         {
-            bool isVelocityEnoughForSprint = player._Rigidbody.linearVelocity.magnitude > player._LocomotionSystem.FreeMovementSetting.runningSpeed - 2f;
+            bool isVelocityEnoughForSprint = player._Rigidbody.linearVelocity.magnitude > (player._IsStrafing ? player._LocomotionSystem.AimingMovementSetting.runningSpeed : player._LocomotionSystem.FreeMovementSetting.runningSpeed) - 2f;
             if (sprintInput && isVelocityEnoughForSprint)
             {
                 if (player._IsStrafing)
@@ -182,11 +173,11 @@ public static class MovementStateMethods
     }
     private static void CheckSprintForNPC(bool runInput, bool sprintInput, NPC npc)
     {
-        bool sprintConditions = npc._DirectionInput.sqrMagnitude > 0.1f && CanRunWithStamina(npc) && npc._IsGrounded && IsMovingForward(npc);
+        bool sprintConditions = npc._DirectionInput.sqrMagnitude > 0.1f && CanRunWithStamina(npc) && npc._IsGrounded && IsMovingForward(npc) && new Vector3((npc._LastCornerFromPath - npc.transform.position).x, 0f, (npc._LastCornerFromPath - npc.transform.position).z).magnitude > 0.7f;
 
         if ((sprintInput || runInput) && sprintConditions)
         {
-            bool isVelocityEnoughForSprint = npc._Rigidbody.linearVelocity.magnitude > npc._LocomotionSystem.FreeMovementSetting.runningSpeed - 2f;
+            bool isVelocityEnoughForSprint = npc._Rigidbody.linearVelocity.magnitude > (npc._IsStrafing ? npc._LocomotionSystem.AimingMovementSetting.runningSpeed : npc._LocomotionSystem.FreeMovementSetting.runningSpeed) - 2f;
             if (sprintInput && isVelocityEnoughForSprint)
             {
                 if (npc._IsStrafing)
@@ -195,11 +186,11 @@ public static class MovementStateMethods
                     npc._LocomotionSystem.FreeMovementSetting.walkByDefault = false;
             }
 
-            if (npc.GetVelocity().sqrMagnitude > 0.1f && !npc._IsSprinting)
+            if (npc._Rigidbody.linearVelocity.sqrMagnitude > 0.1f && !npc._IsSprinting)
             {
                 npc._IsSprinting = true;
             }
-            else if (npc.GetVelocity().sqrMagnitude <= 0.1f && npc._IsSprinting)
+            else if (npc._Rigidbody.linearVelocity.sqrMagnitude <= 0.1f && npc._IsSprinting)
             {
                 if (npc._IsStrafing)
                     npc._LocomotionSystem.AimingMovementSetting.walkByDefault = true;
@@ -220,20 +211,11 @@ public static class MovementStateMethods
     #region Jump Methods
     public static void CheckJump(Humanoid human)
     {
-        if (human is Player)
+        if (human._JumpInput && JumpConditions(human))
         {
-            if ((human as Player)._JumpBuffer && JumpConditions(human))
-            {
+            if (human is Player)
                 GameManager._Instance.BufferActivated(ref WorldHandler._Instance._Player._JumpBuffer, WorldHandler._Instance._Player, ref WorldHandler._Instance._Player._JumpCoroutine);
-                Jump(human);
-            }
-        }
-        else
-        {
-            if ((human as NPC)._WantsToJump && JumpConditions(human))
-            {
-                Jump(human);
-            }
+            Jump(human);
         }
     }
 
@@ -249,7 +231,7 @@ public static class MovementStateMethods
         human._IsJumping = true;
 
         // trigger jump animations
-        if (human.GetVelocity().magnitude < 2f)
+        if (human._Rigidbody.linearVelocity.magnitude < 2f)
             human.ChangeAnimation("Jump", 0.1f);
         else
             human.ChangeAnimation("JumpMove", 0.2f);
@@ -260,14 +242,14 @@ public static class MovementStateMethods
     {
         if (!human._IsJumping) return;
 
-        human._JumpCounter -= Time.deltaTime;
+        human._JumpCounter -= Time.fixedDeltaTime;
         if (human._JumpCounter <= 0)
         {
             human._JumpCounter = 0;
             human._IsJumping = false;
         }
         // apply extra force to the jump height   
-        var vel = human.GetVelocity();
+        var vel = human._Rigidbody.linearVelocity;
         vel.y = human._LocomotionSystem.jumpHeight;
 
         human._Rigidbody.linearVelocity = vel;
@@ -283,13 +265,12 @@ public static class MovementStateMethods
         if ((human._IsGrounded && !human._IsJumping)) return;
         if (human.transform.position.y > human._LocomotionSystem.heightReached) human._LocomotionSystem.heightReached = human.transform.position.y;
 
-        Vector3 targetSmooth = human._DirectionInput;
-        human._LocomotionSystem.inputSmooth = Vector3.Lerp(human._LocomotionSystem.inputSmooth, targetSmooth, human._LocomotionSystem.airSmooth * Time.deltaTime);
+        human._LocomotionSystem.inputSmooth = Vector3.Lerp(human._LocomotionSystem.inputSmooth, human._DirectionInput, human._LocomotionSystem.airSmooth * Time.fixedDeltaTime);
 
         if (human._LocomotionSystem.jumpWithRigidbodyForce && !human._IsGrounded)
         {
             //if (human is Player)
-            human._Rigidbody.AddForce(human._LocomotionSystem.moveDirection * human._LocomotionSystem.airSpeed * Time.deltaTime, ForceMode.VelocityChange);
+            human._Rigidbody.AddForce(human._LocomotionSystem.moveDirection * human._LocomotionSystem.airSpeed * Time.fixedDeltaTime, ForceMode.VelocityChange);
             return;
         }
 
@@ -297,11 +278,11 @@ public static class MovementStateMethods
         human._LocomotionSystem.moveDirection.x = Mathf.Clamp(human._LocomotionSystem.moveDirection.x, -1f, 1f);
         human._LocomotionSystem.moveDirection.z = Mathf.Clamp(human._LocomotionSystem.moveDirection.z, -1f, 1f);
 
-        Vector3 targetPosition = human._Rigidbody.position + (human._LocomotionSystem.moveDirection * human._LocomotionSystem.airSpeed) * Time.deltaTime;
-        Vector3 targetVelocity = (targetPosition - human.transform.position) / Time.deltaTime;
+        Vector3 targetPosition = human._Rigidbody.position + (human._LocomotionSystem.moveDirection * human._LocomotionSystem.airSpeed) * Time.fixedDeltaTime;
+        Vector3 targetVelocity = (targetPosition - human.transform.position) / Time.fixedDeltaTime;
 
         targetVelocity.y = human._Rigidbody.linearVelocity.y;
-        human._Rigidbody.linearVelocity = Vector3.Lerp(human._Rigidbody.linearVelocity, targetVelocity, human._LocomotionSystem.airSmooth * Time.deltaTime);
+        human._Rigidbody.linearVelocity = Vector3.Lerp(human._Rigidbody.linearVelocity, targetVelocity, human._LocomotionSystem.airSmooth * Time.fixedDeltaTime);
     }
 
     /*public static bool jumpFwdCondition(Humanoid human)
@@ -324,7 +305,7 @@ public static class MovementStateMethods
         {
             human._IsGrounded = true;
             if (!human._IsJumping && human._LocomotionSystem.groundDistance > 0.05f)
-                human._Rigidbody.AddForce(human.transform.up * (human._LocomotionSystem.extraGravity * 2 * Time.deltaTime), ForceMode.VelocityChange);
+                human._Rigidbody.AddForce(human.transform.up * (human._LocomotionSystem.extraGravity * 2 * Time.fixedDeltaTime), ForceMode.VelocityChange);
 
             human._LocomotionSystem.heightReached = human.transform.position.y;
         }
@@ -339,12 +320,12 @@ public static class MovementStateMethods
                 // apply extra gravity when falling
                 if (!human._IsJumping)
                 {
-                    human._Rigidbody.AddForce(human.transform.up * human._LocomotionSystem.extraGravity * Time.deltaTime, ForceMode.VelocityChange);
+                    human._Rigidbody.AddForce(human.transform.up * human._LocomotionSystem.extraGravity * Time.fixedDeltaTime, ForceMode.VelocityChange);
                 }
             }
             else if (!human._IsJumping)
             {
-                human._Rigidbody.AddForce(human.transform.up * (human._LocomotionSystem.extraGravity * 2 * Time.deltaTime), ForceMode.VelocityChange);
+                human._Rigidbody.AddForce(human.transform.up * (human._LocomotionSystem.extraGravity * 2 * Time.fixedDeltaTime), ForceMode.VelocityChange);
             }
         }
     }
@@ -369,7 +350,7 @@ public static class MovementStateMethods
         {
             // radius of the SphereCast
             float radius = human._LocomotionSystem._defaultCollider.radius * 0.9f;
-            var dist = 10f;
+            float dist = 10f;
             // ray for RayCast
             Ray ray2 = new Ray(human.transform.position + new Vector3(0, human._LocomotionSystem.colliderHeight / 2, 0), Vector3.down);
             // raycast for check the ground distance
@@ -410,30 +391,32 @@ public static class MovementStateMethods
 
     private static void SetControllerMoveSpeed(LocomotionSystem.MovementSetting speed, Humanoid human)
     {
+        float targetSpeed;
         if (speed.walkByDefault)
-            human._LocomotionSystem.moveSpeed = Mathf.Lerp(human._LocomotionSystem.moveSpeed, human._IsSprinting ? speed.runningSpeed : speed.walkSpeed, speed.movementSmooth * Time.deltaTime);
+            targetSpeed = human._IsSprinting ? speed.runningSpeed : speed.walkSpeed;
         else
-            human._LocomotionSystem.moveSpeed = Mathf.Lerp(human._LocomotionSystem.moveSpeed, human._IsSprinting ? speed.sprintSpeed : speed.runningSpeed, speed.movementSmooth * Time.deltaTime);
+            targetSpeed = human._IsSprinting ? speed.sprintSpeed : speed.runningSpeed;
+
+        float lerpMultiplier = (human._LocomotionSystem.moveSpeed > targetSpeed) ? 1.5f : 1f;
+        human._LocomotionSystem.moveSpeed = Mathf.MoveTowards(human._LocomotionSystem.moveSpeed, targetSpeed, speed.movementSmooth * lerpMultiplier * Time.fixedDeltaTime);
     }
 
     private static void MoveCharacter(Vector3 direction, Humanoid human)
     {
-        // calculate input smooth
-        human._LocomotionSystem.inputSmooth = Vector3.Lerp(human._LocomotionSystem.inputSmooth, human._DirectionInput, (human._IsStrafing ? human._LocomotionSystem.AimingMovementSetting.movementSmooth : human._LocomotionSystem.FreeMovementSetting.movementSmooth) * Time.deltaTime);
+        human._LocomotionSystem.inputSmooth = Vector3.Lerp(human._LocomotionSystem.inputSmooth, human._DirectionInput, (human._IsStrafing ? human._LocomotionSystem.AimingMovementSetting.movementSmooth : human._LocomotionSystem.FreeMovementSetting.movementSmooth) * Time.fixedDeltaTime);
 
         if (!human._IsGrounded || human._IsJumping) return;
 
-        direction.y = 0;
+        //direction.y = 0;
         direction.x = Mathf.Clamp(direction.x, -1f, 1f);
         direction.z = Mathf.Clamp(direction.z, -1f, 1f);
-        // limit the input
         if (direction.magnitude > 1f)
             direction.Normalize();
 
-        Vector3 targetPosition = human.transform.position + direction * (human._StopMove ? 0 : human._LocomotionSystem.moveSpeed * human._LocomotionSystem.MovementSpeedMultiplier) * Time.deltaTime;
-        Vector3 targetVelocity = (targetPosition - human.transform.position) / Time.deltaTime;
+        Vector3 targetPosition = human.transform.position + direction * (human._StopMove ? 0 : human._LocomotionSystem.moveSpeed * human._LocomotionSystem.MovementSpeedMultiplier) * Time.fixedDeltaTime;
+        Vector3 targetVelocity = (targetPosition - human.transform.position) / Time.fixedDeltaTime;
 
-        bool useVerticalVelocity = true;
+        bool useVerticalVelocity = !(human._MovementState is Prone);
         if (useVerticalVelocity) targetVelocity.y = human._Rigidbody.linearVelocity.y;
         human._Rigidbody.linearVelocity = targetVelocity;
     }
@@ -445,13 +428,13 @@ public static class MovementStateMethods
         //if (human is NPC && (human as NPC).GetVelocity().sqrMagnitude < 0.1) return;
 
         RaycastHit hitinfo;
-        var hitAngle = 0f;
+        float hitAngle = 0f;
 
         if (Physics.Linecast(human.transform.position + Vector3.up * (human._LocomotionSystem._defaultCollider.height * 0.5f), human.transform.position + human._LocomotionSystem.moveDirection.normalized * (human._LocomotionSystem._defaultCollider.radius + 0.2f), out hitinfo, human._LocomotionSystem.groundLayer))
         {
             hitAngle = Vector3.Angle(Vector3.up, hitinfo.normal);
 
-            var targetPoint = hitinfo.point + human._LocomotionSystem.moveDirection.normalized * human._LocomotionSystem._defaultCollider.radius;
+            Vector3 targetPoint = hitinfo.point + human._LocomotionSystem.moveDirection.normalized * human._LocomotionSystem._defaultCollider.radius;
             if ((hitAngle > human._LocomotionSystem.slopeLimit) && Physics.Linecast(human.transform.position + Vector3.up * (human._LocomotionSystem._defaultCollider.height * 0.5f), targetPoint, out hitinfo, human._LocomotionSystem.groundLayer))
             {
                 hitAngle = Vector3.Angle(Vector3.up, hitinfo.normal);
@@ -472,16 +455,32 @@ public static class MovementStateMethods
         RotateToDirection(desiredDirection.normalized, human);
     }*/
 
-    private static void RotateToDirection(Vector3 direction, Humanoid human)
+    private static void RotateToDirection(Vector3 direction, Humanoid human, float speed = 0f)
     {
-        float speed = human._AimSpeed * 1.4f;
+        if (speed == 0f)
+            speed = human._AimSpeed * 1.4f;
         direction.y = 0f;
-        Vector3 desiredForward = Vector3.RotateTowards(human.transform.forward, direction.normalized, speed * Time.deltaTime, 1f);
+        Vector3 desiredForward;
+        if (human._IsStrafing)
+            desiredForward = Vector3.RotateTowards(human.transform.forward, direction.normalized, speed * Time.fixedDeltaTime, 1f);
+        else
+            desiredForward = direction.normalized;
         if (desiredForward == Vector3.zero) return;
-        Quaternion _newRotation = Quaternion.LookRotation(desiredForward);
-        human.transform.rotation = _newRotation;
-    }
+        Vector3 up = Vector3.up;
+        if (human._MovementState is Prone)
+        {
+            if (Physics.Raycast(human.transform.position + Vector3.up * 5f, -Vector3.up, out RaycastHit hit, 20f, LayerMask.GetMask("Terrain")))
+                up = hit.normal;
+        }
+        Vector3 right = Vector3.Cross(up, desiredForward).normalized;
+        desiredForward = Vector3.Cross(right, up).normalized;
+        Quaternion lookRot = Quaternion.LookRotation(desiredForward, up);
 
+        if (human._IsStrafing)
+            human.transform.rotation = lookRot;
+        else
+            human.transform.rotation = Quaternion.Lerp(human.transform.rotation, lookRot, Time.fixedDeltaTime * speed);
+    }
 
     #endregion
 }

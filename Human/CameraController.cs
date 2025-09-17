@@ -23,6 +23,10 @@ public class CameraController : MonoBehaviour
         _maxDistance = 14f;
         _minDistance = 7f;
     }
+    private void Start()
+    {
+        StartCoroutine(ArrangeViewBlock());
+    }
     private void Update()
     {
         if (GameManager._Instance._IsGameStopped) return;
@@ -61,7 +65,6 @@ public class CameraController : MonoBehaviour
             _rad = Mathf.Atan2(_FollowOffset.z, _FollowOffset.x);
         }
 
-        StartCoroutine(ArrangeViewBlock());
     }
     private void LateUpdate()
     {

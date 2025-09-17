@@ -102,9 +102,9 @@ public class DiamondShard : Item
         _BaseWeight = 0.005f;
     }
 }
-public class WaterBottle : ConsumableItem
+public class Apple : ConsumableItem
 {
-    public WaterBottle()
+    public Apple()
     {
         _Name = "Water Bottle";
         _BaseWeight = 0.2f;

@@ -5,7 +5,7 @@ using UnityEngine;
 public class Projectile : MonoBehaviour, ICanDamage
 {
     public Damage Damage;
-    public Damage GetDamage()
+    public Damage CalculateDamage()
     {
         return Damage;
     }

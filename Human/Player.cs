@@ -4,6 +4,7 @@ using UnityEngine;
 
 public class Player : Humanoid
 {
+    public static Player _Instance;
     public PlayerInputController _PlayerInputController { get; protected set; }
 
     public Transform _LookAtForCam;
@@ -27,6 +28,7 @@ public class Player : Humanoid
 
     protected override void Awake()
     {
+        _Instance = this;
         base.Awake();
         _IsInCombatMode = false;
         _PlayerInputController = new PlayerInputController(this);
@@ -75,6 +77,7 @@ public class PlayerInputController
         _player._SprintInput = Input.GetButton("Sprint");
         _player._CrouchInput = Input.GetButtonDown("Crouch");
         _player._JumpInput = _player._JumpBuffer;
+        _player._AttackInput = _player._AttackBuffer;
         _player._InteractInput = Input.GetButtonDown("Interact");
         _player._CameraAngleInput = Input.GetButton("CameraAngle");
         _player._CameraZoomInput = Input.mouseScrollDelta.y != 0f;

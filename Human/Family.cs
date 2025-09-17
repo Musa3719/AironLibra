@@ -8,14 +8,10 @@ public class Family
     public Humanoid _Mother { get; set; }
 
     private List<Humanoid> _siblings;
+    public List<Humanoid> _Siblings { get { if (_siblings == null) return SetSiblings(); else return _siblings; } }
     private List<Humanoid> _children;
     public List<Humanoid> _Children { get { if (_children == null) _children = new List<Humanoid>(); return _children; } }
-    public void AddChild(Humanoid child)
-    {
-        _Children.Add(child);
-    }
-
-    public List<Humanoid> GetSiblings()
+    private List<Humanoid> SetSiblings()
     {
         _siblings = new List<Humanoid>();
         foreach (var child in _Father._Family._Children)
@@ -29,4 +25,10 @@ public class Family
         }
         return _siblings;
     }
+
+    public void AddChild(Humanoid child)
+    {
+        _Children.Add(child);
+    }
+
 }

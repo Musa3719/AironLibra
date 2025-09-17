@@ -15,11 +15,11 @@ public interface ICanGetHurt
 
 public interface ICanDamage
 {
-    public Damage GetDamage();
+    public Damage CalculateDamage();
 }
 public abstract class Weapon : MonoBehaviour, ICanDamage
 {
-    public virtual Damage GetDamage()
+    public virtual Damage CalculateDamage()
     {
         return new Damage();
     }
