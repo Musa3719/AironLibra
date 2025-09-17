@@ -2,18 +2,19 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
-public enum PlaneSoundType
+public enum PlaneSoundType : byte
 {
-    Stone,
-    Dirt,
+    Sand,
     Grass,
-    Metal,
-    Concrete,
+    Dirt,
+    WoodenDirt,
+    Stone,
     Wood,
     Fabric,
     Water,
     Ice,
-    Snowy
+    Snow,
+    Swimming,
 }
 public class PlaneSound : MonoBehaviour
 {

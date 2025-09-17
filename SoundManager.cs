@@ -21,16 +21,17 @@ public class SoundManager : MonoBehaviour
     public AudioClip _Button;
 
 
-    public List<AudioClip> _StonePlaneSounds;
-    public List<AudioClip> _DirtPlaneSounds;
+    public List<AudioClip> _SandPlaneSounds;
     public List<AudioClip> _GrassPlaneSounds;
-    public List<AudioClip> _MetalPlaneSounds;
-    public List<AudioClip> _ConcretePlaneSounds;
+    public List<AudioClip> _DirtPlaneSounds;
+    public List<AudioClip> _WoodenDirtPlaneSounds;
+    public List<AudioClip> _StonePlaneSounds;
     public List<AudioClip> _WoodPlaneSounds;
     public List<AudioClip> _FabricPlaneSounds;
     public List<AudioClip> _WaterPlaneSounds;
     public List<AudioClip> _IcePlaneSounds;
-    public List<AudioClip> _SnowyPlaneSounds;
+    public List<AudioClip> _SnowPlaneSounds;
+    public List<AudioClip> _SwimmingSounds;
     #endregion
 
     [SerializeField]
@@ -211,20 +212,20 @@ public class SoundManager : MonoBehaviour
         AudioClip clip = null;
         switch (type)
         {
-            case PlaneSoundType.Stone:
-                clip = GetRandomSoundFromList(_StonePlaneSounds);
-                break;
-            case PlaneSoundType.Dirt:
-                clip = GetRandomSoundFromList(_DirtPlaneSounds);
+            case PlaneSoundType.Sand:
+                clip = GetRandomSoundFromList(_SandPlaneSounds);
                 break;
             case PlaneSoundType.Grass:
                 clip = GetRandomSoundFromList(_GrassPlaneSounds);
                 break;
-            case PlaneSoundType.Metal:
-                clip = GetRandomSoundFromList(_MetalPlaneSounds);
+            case PlaneSoundType.Dirt:
+                clip = GetRandomSoundFromList(_DirtPlaneSounds);
                 break;
-            case PlaneSoundType.Concrete:
-                clip = GetRandomSoundFromList(_ConcretePlaneSounds);
+            case PlaneSoundType.WoodenDirt:
+                clip = GetRandomSoundFromList(_WoodenDirtPlaneSounds);
+                break;
+            case PlaneSoundType.Stone:
+                clip = GetRandomSoundFromList(_StonePlaneSounds);
                 break;
             case PlaneSoundType.Wood:
                 clip = GetRandomSoundFromList(_WoodPlaneSounds);
@@ -238,8 +239,11 @@ public class SoundManager : MonoBehaviour
             case PlaneSoundType.Ice:
                 clip = GetRandomSoundFromList(_IcePlaneSounds);
                 break;
-            case PlaneSoundType.Snowy:
-                clip = GetRandomSoundFromList(_SnowyPlaneSounds);
+            case PlaneSoundType.Snow:
+                clip = GetRandomSoundFromList(_SnowPlaneSounds);
+                break;
+            case PlaneSoundType.Swimming:
+                clip = GetRandomSoundFromList(_SwimmingSounds);
                 break;
             default:
                 break;

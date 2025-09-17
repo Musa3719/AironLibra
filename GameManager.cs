@@ -22,6 +22,7 @@ public class GameManager : MonoBehaviour
 
     public int _LevelIndex { get; private set; }
 
+    public LayerMask _TerrainSolidAndWaterMask;
     public LayerMask _TerrainAndWaterMask;
     public LayerMask _TerrainAndSolidMask;
     public LayerMask _SolidAndHumanMask;
@@ -126,6 +127,10 @@ public class GameManager : MonoBehaviour
 
     #region CommonMethods
 
+    public Vector3 Vector2ToVector3(Vector2 vec)
+    {
+        return new Vector3(vec.x, 0f, vec.y);
+    }
     public T GetRandomFromList<T>(List<T> list)
     {
         return list[UnityEngine.Random.Range(0, list.Count)];
