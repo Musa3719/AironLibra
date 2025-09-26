@@ -20,6 +20,7 @@ public class CameraController : MonoBehaviour
     {
         _Instance = this;
         _realCameraDistance = 10f;
+        _CameraDistance = _realCameraDistance;
         _maxDistance = 14f;
         _minDistance = 7f;
     }
@@ -71,6 +72,8 @@ public class CameraController : MonoBehaviour
         if (GameManager._Instance._IsGameStopped) return;
 
         float lerpSpeed = WorldHandler._Instance._Player._CameraAngleInput ? 4f : 2f;
+        WorldHandler._Instance._Player._LookAtForCam.position =
+            new Vector3(WorldHandler._Instance._Player._LookAtForCam.position.x, Mathf.Clamp(WorldHandler._Instance._Player._LookAtForCam.position.y, WorldHandler._Instance._SeaLevel, float.MaxValue), WorldHandler._Instance._Player._LookAtForCam.position.z);
         lerpSpeed = (WorldHandler._Instance._Player._LookAtForCam.position - transform.position).magnitude > _CameraDistance * 2f ? 6f : lerpSpeed;
         transform.position = Vector3.Lerp(transform.position, WorldHandler._Instance._Player._LookAtForCam.position + _FollowOffset * _CameraDistance, Time.deltaTime * lerpSpeed);
         Vector3 targetAngles = new Vector3(45f, Mathf.Atan2(_FollowOffset.x, _FollowOffset.z) * Mathf.Rad2Deg + 180f, 0f);
@@ -84,7 +87,15 @@ public class CameraController : MonoBehaviour
             Physics.Raycast(transform.position, (WorldHandler._Instance._Player.transform.position - transform.position).normalized, out RaycastHit hit, 300f, GameManager._Instance._SolidAndHumanMask);
             if (hit.collider != null && hit.collider.gameObject.layer == LayerMask.NameToLayer("SolidObject"))
             {
-                _CameraDistance = Mathf.Clamp(_CameraDistance - 0.5f, 2f, _realCameraDistance);
+                Physics.Raycast(transform.position, (WorldHandler._Instance._Player.transform.position + Vector3.up * 0.7f - transform.position).normalized, out hit, 300f, GameManager._Instance._SolidAndHumanMask);
+                if (hit.collider != null && hit.collider.gameObject.layer == LayerMask.NameToLayer("SolidObject"))
+                {
+                    Physics.Raycast(transform.position, (WorldHandler._Instance._Player.transform.position + Vector3.up * 1.2f - transform.position).normalized, out hit, 300f, GameManager._Instance._SolidAndHumanMask);
+                    if (hit.collider != null && hit.collider.gameObject.layer == LayerMask.NameToLayer("SolidObject"))
+                    {
+                        _CameraDistance = Mathf.Clamp(_CameraDistance - 0.5f, 2f, _realCameraDistance);
+                    }
+                }
             }
             else
             {
@@ -96,16 +107,6 @@ public class CameraController : MonoBehaviour
             }
             yield return null;
         }
-    }
-    private bool IsInOpenWorld()
-    {
-        if (SceneManager.GetActiveScene().buildIndex == 1 && !IsInClosedSpace())
-            return true;
-        return false;
-    }
-    private bool IsInClosedSpace()
-    {
-        return Physics.Raycast(transform.position, Vector3.up, 150f, LayerMask.GetMask("SolidObject"));
     }
 
     private void ActivateCoolAngleMod()

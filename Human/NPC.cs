@@ -5,6 +5,7 @@ using UnityEngine.AI;
 
 public class NPC : Humanoid
 {
+    public ushort _NpcIndex;
     public override Vector2 _DirectionInput => _directionCurrent;
     public Vector3 _LastCornerFromPath { get; private set; }
     private Vector2 _directionCurrent;
@@ -30,23 +31,38 @@ public class NPC : Humanoid
     public Vector3 _AimPosition { get; set; }
     public bool _IsOnLinkMovement { get; private set; }
 
-    protected void Awake()
+
+    private Vector3 _checkCornerDist;
+
+    protected override void Awake()
     {
+        _Rigidbody = GetComponent<Rigidbody>();
+        if (transform.childCount == 0) return;
+        _MainCollider = transform.GetChild(0).Find("char").Find("Root").Find("Global").Find("Position").Find("Hips").Find("MainCollider").GetComponent<CapsuleCollider>();
+
         base.Awake();
+        _checkCornerDist = Vector3.zero;
         _cornersFromPath = new List<Vector3>();
 
         _Class = new Peasant();//
     }
-    protected void Start()
+    protected override void Start()
     {
+        if (_Rigidbody.isKinematic) return;
+
         Stop();
         base.Start();
     }
 
-    protected void Update()
+    protected override void Update()
     {
         if (GameManager._Instance._IsGameStopped) return;
 
+        if (_Rigidbody.isKinematic)
+        {
+            NotRuntimeNPCUpdate();
+            return;
+        }
         //disable inputs
         _JumpInput = false;
         _CrouchInput = false;
@@ -59,6 +75,11 @@ public class NPC : Humanoid
         base.Update();
 
         //testing
+        if (Input.GetKeyDown(KeyCode.F))
+            WorldAndNpcCreation.ChangeColor(_UmaDynamicAvatar, "Skin", Color.red);
+        //WorldAndNpcCreation.ChangeGender(_UmaDynamicAvatar, Random.Range(0, 2) == 0);
+        if (Input.GetKeyDown(KeyCode.E))
+            DestroyNPCChild();
         if (Input.GetKeyDown(KeyCode.M))
             ArrangeNewMovementTarget(GameObject.Find("TargetPositionTest").transform.position);
         if (Input.GetKey(KeyCode.N))
@@ -66,6 +87,29 @@ public class NPC : Humanoid
         else
             _SprintInput = false;
 
+    }
+    private void NotRuntimeNPCUpdate()
+    {
+        if (Input.GetKeyDown(KeyCode.Q))
+            SpawnNPCChild();
+    }
+    public void SpawnNPCChild()
+    {
+        if (transform.childCount != 0) return;
+
+        GameManager._Instance._NPCPool.GetOneFromPool().transform.SetParent(transform);
+        transform.GetChild(0).localPosition = Vector3.zero;
+        _Rigidbody.isKinematic = false;
+
+        Awake();
+        Start();
+    }
+    public void DestroyNPCChild()
+    {
+        if (transform.childCount == 0) return;
+
+        _Rigidbody.isKinematic = true;
+        GameManager._Instance._NPCPool.GameObjectToPool(transform.GetChild(0).gameObject);
     }
     private void ArrangeDirection()
     {
@@ -115,6 +159,8 @@ public class NPC : Humanoid
     }
     private void CheckNextPosition()
     {
+        if (_isPathEnded) return;
+
         if (_nextPositionCheckCounter <= _nextPositionCheckThreshold)
         {
             _nextPositionCheckCounter += Time.deltaTime;
@@ -127,14 +173,14 @@ public class NPC : Humanoid
             bool isStopping;
             Vector3 directionInput = new Vector3(_Rigidbody.linearVelocity.x, 0f, _Rigidbody.linearVelocity.z);
             _cliffCheckForwardForVel = Mathf.Lerp(_cliffCheckForwardForVel, directionInput.magnitude < 0.1f ? 1f : (_IsSprinting ? 3.25f : 1.5f), Time.deltaTime * 2f);
-            Debug.DrawRay(transform.position + Vector3.up * 0.8f + directionInput.normalized * _cliffCheckForwardForVel, -Vector3.up);
-            Physics.Raycast(transform.position + Vector3.up * 0.8f + directionInput.normalized * _cliffCheckForwardForVel, -Vector3.up, out RaycastHit hit, 8f, GameManager._Instance._TerrainAndSolidMask);
+            //Debug.DrawRay(transform.position + Vector3.up * 0.8f + directionInput.normalized * _cliffCheckForwardForVel, -Vector3.up);
+            Physics.Raycast(transform.position + Vector3.up * 0.8f + directionInput.normalized * _cliffCheckForwardForVel, -Vector3.up, out RaycastHit hit, 8f, GameManager._Instance._TerrainSolidAndWaterMask);
             isStopping = hit.collider == null;
 
             directionInput = GameManager._Instance.Vector2ToVector3(_DirectionInput);
             _cliffCheckForwardForDir = Mathf.Lerp(_cliffCheckForwardForDir, directionInput.magnitude < 0.1f ? 1f : (_IsSprinting ? 3.25f : 1.5f), Time.deltaTime * 2f);
-            Debug.DrawRay(transform.position + Vector3.up * 0.8f + directionInput.normalized * _cliffCheckForwardForDir, -Vector3.up);
-            Physics.Raycast(transform.position + Vector3.up * 0.8f + directionInput.normalized * _cliffCheckForwardForDir, -Vector3.up, out hit, 8f, GameManager._Instance._TerrainAndSolidMask);
+            //Debug.DrawRay(transform.position + Vector3.up * 0.8f + directionInput.normalized * _cliffCheckForwardForDir, -Vector3.up);
+            Physics.Raycast(transform.position + Vector3.up * 0.8f + directionInput.normalized * _cliffCheckForwardForDir, -Vector3.up, out hit, 8f, GameManager._Instance._TerrainSolidAndWaterMask);
             isStopping = isStopping ? isStopping : hit.collider == null;
 
             if (isStopping)
@@ -222,7 +268,7 @@ public class NPC : Humanoid
 
             breakCoroutine = true;
             Vector3 segmentatedTarget = _MoveTargetPosition;
-            if (new Vector3(dist.x - transform.position.x, 0f, dist.z - transform.position.z).magnitude > _segmentationMagnitude)
+            if (new Vector3(dist.x, 0f, dist.z).magnitude > _segmentationMagnitude)
             {
                 breakCoroutine = false;
                 segmentatedTarget = transform.position + new Vector3((_MoveTargetPosition - transform.position).x, transform.position.y, (_MoveTargetPosition - transform.position).z).normalized * _segmentationMagnitude;
@@ -264,7 +310,7 @@ public class NPC : Humanoid
         float radiusStep = 2f;
         int angleStep = 30;
         float radius, angle;
-        for (int i = 0; i < 100; i++)
+        for (int i = 0; i < 20; i++)
         {
             if (Physics.Raycast(rayPos + Vector3.up * 1000f, -Vector3.up, out RaycastHit hit, 1200f, GameManager._Instance._TerrainAndSolidMask))
             {
@@ -286,8 +332,12 @@ public class NPC : Humanoid
     }
     public void ArrangeMovementCorners()
     {
-        float dist = (_LastCornerFromPath - transform.position).magnitude;
-        if (dist < 0.2f)
+        if (_isPathEnded) return;
+
+        _checkCornerDist = _LastCornerFromPath - transform.position;
+        _checkCornerDist.y = 0f;
+
+        if (_checkCornerDist.magnitude < (_IsSprinting ? 1f : 0.35f))
         {
             if (_cornersFromPath.Count > 0)
             {
@@ -297,9 +347,7 @@ public class NPC : Humanoid
             }
             else
             {
-                _LastCornerFromPath = transform.position;
-                _directionInputFromPath = Vector2.zero;
-                _isPathEnded = true;
+                Stop();
             }
 
         }

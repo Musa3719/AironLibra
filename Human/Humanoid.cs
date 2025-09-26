@@ -1,18 +1,24 @@
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.Animations.Rigging;
 using FischlWorks;
+using UMA;
 using UMA.CharacterSystem;
 using FIMSpace;
 
 public abstract class Humanoid : MonoBehaviour, ICanGetHurt
 {
-    public Animator _Animator { get; protected set; }
+    public Animator _Animator { get { if (_animator == null) { _animator = _LocomotionSystem.GetComponentInChildren<Animator>(); _animator.updateMode = AnimatorUpdateMode.Fixed; _animator.cullingMode = AnimatorCullingMode.CullUpdateTransforms; } return _animator; } }
+    private Animator _animator;
     public Rigidbody _Rigidbody { get; protected set; }
+    public CapsuleCollider _MainCollider { get; protected set; }
     public LocomotionSystem _LocomotionSystem { get; protected set; }
     public csHomebrewIK _FootIKComponent { get; protected set; }
     public LeaningAnimator _LeaninganimatorComponent { get; protected set; }
+    public DynamicCharacterAvatar _UmaDynamicAvatar { get; protected set; }
+    public Dictionary<string, DnaSetter> _DNA { get; private set; }
+    public Dictionary<string, float> _DnaData { get; set; }
+    public List<string> _WardrobeData { get; set; }
 
     //Systems
     public string _Name { get; protected set; }
@@ -27,7 +33,7 @@ public abstract class Humanoid : MonoBehaviour, ICanGetHurt
 
     //public Characteristic _Characteristic { get; private set; }
 
-
+    public float _SizeMultiplier { get; private set; }
     public virtual Vector2 _DirectionInput { get; }
     public bool _RunInput { get; set; }
     public bool _SprintInput { get; set; }
@@ -43,6 +49,7 @@ public abstract class Humanoid : MonoBehaviour, ICanGetHurt
     public bool _IsSprinting { get; set; }
     public bool _StopMove { get; set; }
 
+    private Transform _headTransform;
 
     [HideInInspector] public float _JumpTimer = 0.15f;
     [HideInInspector] public float _JumpCounter;
@@ -51,104 +58,345 @@ public abstract class Humanoid : MonoBehaviour, ICanGetHurt
 
     public RaycastHit _RayFoLook;
     public Coroutine _RotateAroundCoroutine;
-
+    public bool _IsInClosedSpace { get; private set; }
 
     private float _walkSoundCounter;
     private bool _umaWaitingForCompletion;
 
+    private float _checkForClosedSpaceCounter;
+    private float _lastAlphaForSnow;
+    private float _targetAlphaForSnow;
+
+    #region Method Parameters For Opt
+    private Vector3 _distanceToPlayer;
+    #endregion
+
     protected virtual void Awake()
     {
-        _Animator = GetComponentInChildren<Animator>();
-        _Rigidbody = GetComponent<Rigidbody>();
         _LocomotionSystem = GetComponentInChildren<LocomotionSystem>();
-        _FootIKComponent = GetComponentInChildren<csHomebrewIK>();
-        _LeaninganimatorComponent = GetComponentInChildren<LeaningAnimator>();
+        _FootIKComponent = _LocomotionSystem.GetComponentInChildren<csHomebrewIK>();
+        _LeaninganimatorComponent = _LocomotionSystem.GetComponentInChildren<LeaningAnimator>();
+        _UmaDynamicAvatar = _LocomotionSystem.transform.Find("char").GetComponent<DynamicCharacterAvatar>();
         InitOrLoadUmaCharacter();
     }
     protected virtual void Start()
     {
         _LocomotionSystem.Init();
         ArrangeStartingStates();
-        ArrangeStatsFromLevels();
     }
     protected virtual void Update()
     {
         if (GameManager._Instance._IsGameStopped) return;
+        _distanceToPlayer = (GameManager._Instance._Player.transform.position - transform.position);
+        _distanceToPlayer.y = 0f;
 
         ControlUmaDataRuntimeLoadUnload();
         ArrangePlaneSound();
         ArrangeStamina();
+        ArrangeIsInClosedSpace();
+        ArrangeSnowLayer();
         _MovementState.DoState();
         _HandState.DoState();
+
+        //testing
+        if (Input.GetKeyDown(KeyCode.R))
+            WearWardrobe(UMAAssetIndexer.Instance.GetRecipe("MaleRobe"));
+        if (Input.GetKeyDown(KeyCode.T))
+            RemoveWardrobe(UMAAssetIndexer.Instance.GetRecipe("MaleRobe"));
+        if (Input.GetKeyDown(KeyCode.Y))
+            WearWardrobe(UMAAssetIndexer.Instance.GetRecipe("MaleShirt1"));
+
 
         if (_umaWaitingForCompletion && _Animator.avatar != null)
             UmaUpdateCompleted();
     }
     private void FixedUpdate()
     {
+        if (_Rigidbody.isKinematic) return;
+
         _MovementState.FixedUpdate();
     }
     private void OnAnimatorMove()
     {
         ControlAnimatorRootMotion();
     }
-    private void ControlUmaDataRuntimeLoadUnload()
+    private void InitOrLoadUmaCharacter()
     {
-        if (this is Player) return;
-
-        bool isBuildEnabled = transform.Find("char").GetComponent<DynamicCharacterAvatar>().BuildCharacterEnabled;
-        Vector3 distance = (Player._Instance.transform.position - transform.position);
-        distance.y = 0f;
-
-        if (!isBuildEnabled && distance.magnitude < 40f)
-            EnableHumanData();
-        else if (isBuildEnabled && distance.magnitude > 60f)
-            DisableHumanData();
+        _UmaDynamicAvatar.CharacterCreated.AddListener((a) => UmaCreated());
+        _UmaDynamicAvatar.CharacterUpdated.AddListener((a) => UmaUpdated());
     }
     public void UmaCreated()
     {
-        //for init
+        bool wasBuildOpen = _UmaDynamicAvatar.BuildCharacterEnabled;
+        _UmaDynamicAvatar.BuildCharacterEnabled = false;
+
+        _headTransform = _UmaDynamicAvatar.transform.Find("Root").Find("Global").Find("Position").Find("Hips").Find("LowerBack").Find("Spine").Find("Spine1").Find("Neck").Find("Head");
+        SetDna();
+        SetWardrobe();
         UmaUpdated();
+
+        if (wasBuildOpen)
+            _UmaDynamicAvatar.BuildCharacterEnabled = true;
     }
     public void UmaUpdated()
     {
         _umaWaitingForCompletion = true;
     }
-    public void UmaUpdateCompleted()
+    private void UmaUpdateCompleted()
     {
+        if (_headTransform == null) return;
+
         _umaWaitingForCompletion = false;
-        GetComponentInChildren<csHomebrewIK>().StartForUma();
+        _SizeMultiplier = (_headTransform.position.y - transform.position.y) / 1.77f;
+        ChangeShader();
+        if (GetComponentInChildren<csHomebrewIK>() != null)
+            GetComponentInChildren<csHomebrewIK>().StartForUma();
+    }
+
+    private void ControlUmaDataRuntimeLoadUnload()
+    {
+        if (this is Player) return;
+
+        bool isBuildEnabled = _UmaDynamicAvatar.BuildCharacterEnabled;
+
+        if (!isBuildEnabled && _distanceToPlayer.magnitude < 20f)
+            _UmaDynamicAvatar.GetComponent<UMA.PoseTools.ExpressionPlayer>().enabled = true;
+        else if (isBuildEnabled && _distanceToPlayer.magnitude > 40f)
+            _UmaDynamicAvatar.GetComponent<UMA.PoseTools.ExpressionPlayer>().enabled = false;
+
+        if (!isBuildEnabled && _distanceToPlayer.magnitude < 40f)
+            EnableHumanData();
+        else if (isBuildEnabled && _distanceToPlayer.magnitude > 60f)
+            DisableHumanData();
     }
     public void EnableHumanData()
     {
-        if (!(_MovementState is Prone))
+        if ((_MovementState is Locomotion) || (_MovementState is Crouch))
             _FootIKComponent.enabled = true;
         _Animator.enabled = true;
         _LeaninganimatorComponent.enabled = true;
-        transform.Find("char").GetComponent<DynamicCharacterAvatar>().BuildCharacterEnabled = true;
+        _UmaDynamicAvatar.BuildCharacterEnabled = true;
     }
     public void DisableHumanData()
     {
         _FootIKComponent.enabled = false;
         _Animator.enabled = false;
         _LeaninganimatorComponent.enabled = false;
-        SkinnedMeshRenderer smr = transform.Find("char").Find("UMARenderer")?.GetComponent<SkinnedMeshRenderer>();
+        SkinnedMeshRenderer smr = _UmaDynamicAvatar?.transform.Find("UMARenderer")?.GetComponent<SkinnedMeshRenderer>();
         if (smr != null && smr.sharedMesh != null)
         {
             Destroy(smr.sharedMesh);
             smr.sharedMesh = null;
         }
 
-        transform.Find("char").GetComponent<DynamicCharacterAvatar>().BuildCharacterEnabled = false;
-        UMA.UMAData data = transform.Find("char").GetComponent<DynamicCharacterAvatar>().umaData;
-        data.CleanAvatar();
-        data.CleanMesh(false);
-        data.CleanTextures();
+        _UmaDynamicAvatar.BuildCharacterEnabled = false;
+        _UmaDynamicAvatar.umaData.CleanAvatar();
+        _UmaDynamicAvatar.umaData.CleanMesh(false);
+        _UmaDynamicAvatar.umaData.CleanTextures();
     }
-    private void InitOrLoadUmaCharacter()
+
+    public void WearWardrobe(UMATextRecipe recipe)
     {
+        if (_WardrobeData.Contains(recipe.name)) return;
+
+        UMATextRecipe tempRecipe;
+        int foundCount = 0;
+        for (int i = 0; i < _WardrobeData.Count; i++)
+        {
+            tempRecipe = UMAAssetIndexer.Instance.GetRecipe(_WardrobeData[i]);
+            if (recipe.wardrobeSlot == tempRecipe.wardrobeSlot)
+            {
+                if (foundCount == 0)
+                {
+                    foundCount++;
+                }
+                else
+                {
+                    foundCount++;
+                    break;
+                }
+            }
+        }
+        if (foundCount > 1) return;
+
+        if (foundCount == 1 && recipe.wardrobeSlot != "Chest" && recipe.wardrobeSlot != "Legs")
+            return;
+
+        _UmaDynamicAvatar.SetSlot(recipe);
+        _WardrobeData.Add(recipe.name);
+
+        if (_UmaDynamicAvatar.BuildCharacterEnabled)
+        {
+            _UmaDynamicAvatar.BuildCharacterEnabled = false;
+            _UmaDynamicAvatar.BuildCharacterEnabled = true;
+        }
+    }
+    public void RemoveWardrobe(UMATextRecipe recipe)
+    {
+        if (!_WardrobeData.Contains(recipe.name)) return;
+
+        string removedSlot = recipe.wardrobeSlot;
+        _UmaDynamicAvatar.ClearSlot(removedSlot);
+        _WardrobeData.Remove(recipe.name);
+
+        for (int i = 0; i < _WardrobeData.Count; i++)
+        {
+            recipe = UMAAssetIndexer.Instance.GetRecipe(_WardrobeData[i]);
+            if (recipe.wardrobeSlot == removedSlot)
+            {
+                _UmaDynamicAvatar.SetSlot(recipe);
+                break;
+            }
+        }
+
+        if (_UmaDynamicAvatar.BuildCharacterEnabled)
+        {
+            _UmaDynamicAvatar.BuildCharacterEnabled = false;
+            _UmaDynamicAvatar.BuildCharacterEnabled = true;
+        }
+    }
+
+    private void SetDna()
+    {
+        if (_DnaData == null) return;
+
+        _DNA = _UmaDynamicAvatar.GetDNA();
+        foreach (var item in _DNA.Keys)
+        {
+            if (_DnaData.ContainsKey(item))
+                _DNA[item].Set(_DnaData[item]);
+            else
+                Debug.Log(item);
+        }
+    }
+    private void SetWardrobe()
+    {
+        if (_WardrobeData == null) return;
 
     }
+    private void ChangeShader()
+    {
+        if (_UmaDynamicAvatar == null || _UmaDynamicAvatar.transform.Find("UMARenderer") == null || _UmaDynamicAvatar.transform.Find("UMARenderer").GetComponent<SkinnedMeshRenderer>().sharedMaterials.Length == 0)
+        {
+            Debug.LogError("Uma Null! Cannot Change Shader");
+            return;
+        }
+        float smoothness;
+        Texture baseTexture, metallicTexture, normalTexture;
+
+        Material[] umaMaterials = _UmaDynamicAvatar.transform.Find("UMARenderer").GetComponent<SkinnedMeshRenderer>().sharedMaterials;
+        for (int i = 0; i < umaMaterials.Length; i++)
+        {
+            if (umaMaterials[i].shader.name.StartsWith("UMA"))
+            {
+                if (!umaMaterials[i].shader.name.StartsWith("UMA/Diffuse_Normal_Metallic"))
+                {
+                    _UmaDynamicAvatar.transform.Find("UMARenderer").GetComponent<SkinnedMeshRenderer>().SetPropertyBlock(null, i);
+                    continue;
+                }
+
+                smoothness = umaMaterials[i].GetFloat("_SmoothnessModulation");
+                baseTexture = umaMaterials[i].GetTexture("_BaseMap");
+                metallicTexture = umaMaterials[i].GetTexture("_MetallicGlossMap");
+                normalTexture = umaMaterials[i].GetTexture("_BumpMap");
+
+                umaMaterials[i] = PrefabHolder._Instance._Pw_URP_Shared;
+            }
+            else
+            {
+                smoothness = umaMaterials[i].GetFloat("_Glossiness");
+                baseTexture = umaMaterials[i].GetTexture("_MainTex");
+                metallicTexture = umaMaterials[i].GetTexture("_MetallicGlossMap");
+                normalTexture = umaMaterials[i].GetTexture("_BumpMap");
+            }
+
+            MaterialPropertyBlock block = new MaterialPropertyBlock();
+            if (baseTexture != null)
+                block.SetTexture("_MainTex", baseTexture);
+            if (normalTexture != null)
+                block.SetTexture("_BumpMap", normalTexture);
+            metallicTexture = ConvertToMaskMap(metallicTexture, smoothness);
+            if (metallicTexture != null)
+                block.SetTexture("_MetallicGlossMap", metallicTexture);
+            _UmaDynamicAvatar.transform.Find("UMARenderer").GetComponent<SkinnedMeshRenderer>().SetPropertyBlock(block, i);
+        }
+        _UmaDynamicAvatar.transform.Find("UMARenderer").GetComponent<SkinnedMeshRenderer>().sharedMaterials = umaMaterials;
+    }
+    private Texture2D ConvertToMaskMap(Texture metallicTex, float smoothness)
+    {
+        if (metallicTex == null) return null;
+
+        Texture2D src = metallicTex as Texture2D;
+        if (src == null)
+        {
+            RenderTexture tmp = RenderTexture.GetTemporary(metallicTex.width, metallicTex.height, 0, RenderTextureFormat.ARGB32);
+            Graphics.Blit(metallicTex, tmp);
+
+            RenderTexture prev = RenderTexture.active;
+            RenderTexture.active = tmp;
+
+            src = new Texture2D(metallicTex.width, metallicTex.height, TextureFormat.RGBA32, false);
+            src.ReadPixels(new Rect(0, 0, tmp.width, tmp.height), 0, 0);
+            src.Apply();
+
+            RenderTexture.active = prev;
+            RenderTexture.ReleaseTemporary(tmp);
+        }
+
+        Color[] pixels = src.GetPixels();
+        for (int i = 0; i < pixels.Length; i++)
+        {
+            float r = pixels[i].r;   // metallic
+            float s = pixels[i].a;   // smoothness
+            pixels[i] = new Color(r, 1f, 1f, s == 1f ? smoothness : s);
+        }
+
+        Texture2D mask = new Texture2D(src.width, src.height, TextureFormat.RGBA32, false);
+        mask.SetPixels(pixels);
+        mask.Apply();
+
+        return mask;
+    }
+
+    private void ArrangeIsInClosedSpace()
+    {
+        if (_checkForClosedSpaceCounter > 0.5f)
+        {
+            _checkForClosedSpaceCounter = 0f;
+
+            if (GameManager._Instance.IsInClosedSpace(transform.position))
+                _IsInClosedSpace = true;
+            else
+                _IsInClosedSpace = false;
+        }
+        else
+            _checkForClosedSpaceCounter += Time.deltaTime;
+    }
+    private void ArrangeSnowLayer()
+    {
+        if (_UmaDynamicAvatar == null || _UmaDynamicAvatar.transform.Find("UMARenderer") == null || _UmaDynamicAvatar.transform.Find("UMARenderer").GetComponent<SkinnedMeshRenderer>().sharedMaterials == null) return;
+
+        if (_IsInClosedSpace)
+            _targetAlphaForSnow = 0f;
+        else
+            _targetAlphaForSnow = 1f;
+
+        if (_lastAlphaForSnow != _targetAlphaForSnow)
+        {
+            _lastAlphaForSnow = Mathf.MoveTowards(_lastAlphaForSnow, _targetAlphaForSnow, Time.deltaTime * 0.15f);
+            int length = _UmaDynamicAvatar.transform.Find("UMARenderer").GetComponent<SkinnedMeshRenderer>().sharedMaterials.Length;
+            MaterialPropertyBlock block;
+            for (int i = 0; i < length; i++)
+            {
+                block = new MaterialPropertyBlock();
+                block.SetColor("_PW_CoverLayer1Color", Color.white);
+                _UmaDynamicAvatar.transform.Find("UMARenderer").GetComponent<SkinnedMeshRenderer>().GetPropertyBlock(block, i);
+                block.SetColor("_PW_CoverLayer1Color", new Color(1f, 1f, 1f, _lastAlphaForSnow));
+                _UmaDynamicAvatar.transform.Find("UMARenderer").GetComponent<SkinnedMeshRenderer>().SetPropertyBlock(block, i);
+            }
+        }
+    }
+
     public void ControlAnimatorRootMotion()
     {
         if (!this.enabled) return;
@@ -164,9 +412,20 @@ public abstract class Humanoid : MonoBehaviour, ICanGetHurt
     {
         //arrange 2 states, health system and inventory from saves or create it
 
-        //temp
-        EnterState(new Locomotion(this));
-        EnterState(new Empty(this));
+        EnterState(new Locomotion(this));//get from save
+        EnterState(new Empty(this));//get from save
+
+        //Arrange Max Speed
+        float maxSpeedMultiplier = 1f;//get dexterity, exhaust level, % carry weight, health system
+        _LocomotionSystem.AnimatorMaxSpeedMultiplier = maxSpeedMultiplier;
+        //LocomotionSystem.FreeMovementSetting.sprintSpeed = 5.5f * maxSpeedMultiplier;
+
+        //Arrange Stamina
+        float maxStamina = 220f;//get exhaust level, str and health system
+        _LocomotionSystem.MaxStamina = maxStamina;
+        _LocomotionSystem.Stamina = maxStamina;
+
+        //Arrange
     }
     public void ChangeAnimation(string name, float fadeTime = 0.2f)
     {
@@ -191,9 +450,7 @@ public abstract class Humanoid : MonoBehaviour, ICanGetHurt
 
     private void ArrangePlaneSound()
     {
-        Vector3 dist = (Player._Instance.transform.position - transform.position);
-        dist.y = 0f;
-        if (dist.magnitude > 50f) return;
+        if (_distanceToPlayer.magnitude > 40f) return;
 
         Physics.Raycast(transform.position + Vector3.up, -Vector3.up, out RaycastHit hit, 2f, GameManager._Instance._TerrainAndSolidMask);
         float speed = _Rigidbody.linearVelocity.magnitude;
@@ -236,7 +493,7 @@ public abstract class Humanoid : MonoBehaviour, ICanGetHurt
         Vector3 localPos = hit.transform.InverseTransformPoint(hit.point);
         int x = Mathf.FloorToInt(localPos.x / terrain.terrainData.size.x * terrain.terrainData.alphamapWidth);
         int y = Mathf.FloorToInt(localPos.z / terrain.terrainData.size.z * terrain.terrainData.alphamapHeight);
-        
+
         //Debug.Log(hit.collider.gameObject.GetComponent<TerrainBehaviour>()._SoundTypeMap[x, y]);
         return hit.collider.gameObject.GetComponent<TerrainBehaviour>()._SoundTypeMap[x, y];
     }
@@ -271,24 +528,6 @@ public abstract class Humanoid : MonoBehaviour, ICanGetHurt
 
         transform.forward = Vector3.Lerp(transform.forward, (pos - transform.position).normalized, Time.deltaTime * lerpSpeed);
         transform.eulerAngles = new Vector3(0f, transform.eulerAngles.y, 0f);
-    }
-    public void LevelChanged()
-    {
-        ArrangeStatsFromLevels();
-    }
-    public void ArrangeStatsFromLevels()
-    {
-        //Arrange Max Speed
-        float maxSpeedMultiplier = 1f;//get dexterity, exhaust level, % carry weight, health system
-        _LocomotionSystem.AnimatorMaxSpeedMultiplier = maxSpeedMultiplier;
-        //LocomotionSystem.FreeMovementSetting.sprintSpeed = 5.5f * maxSpeedMultiplier;
-
-        //Arrange Stamina
-        float maxStamina = 220f;//get exhaust level, str and health system
-        _LocomotionSystem.MaxStamina = maxStamina;
-        _LocomotionSystem.Stamina = maxStamina;
-
-        //Arrange
     }
 
 

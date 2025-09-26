@@ -4,7 +4,6 @@ using UnityEngine;
 
 public class Player : Humanoid
 {
-    public static Player _Instance;
     public PlayerInputController _PlayerInputController { get; protected set; }
 
     public Transform _LookAtForCam;
@@ -28,12 +27,12 @@ public class Player : Humanoid
 
     protected override void Awake()
     {
-        _Instance = this;
+        _Rigidbody = GetComponent<Rigidbody>();
+        _MainCollider = transform.Find("char").Find("Root").Find("Global").Find("Position").Find("Hips").Find("MainCollider").GetComponent<CapsuleCollider>();
         base.Awake();
-        _IsInCombatMode = false;
         _PlayerInputController = new PlayerInputController(this);
     }
-    protected virtual void Start()
+    protected override void Start()
     {
         base.Start();
     }

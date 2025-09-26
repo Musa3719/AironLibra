@@ -6,6 +6,7 @@ using UnityEngine.AI;
 public class WorldHandler : MonoBehaviour
 {
     public static WorldHandler _Instance;
+    public float _SeaLevel { get; private set; }
 
     public int _DaysPassed { get; private set; }
     public Calendar _Date { get; private set; }
@@ -14,8 +15,9 @@ public class WorldHandler : MonoBehaviour
     public List<Group> _Factions { get; private set; }
     public Group _PlayerFaction { get; private set; }
 
-    [SerializeField] private Player _player;
-    public Player _Player => _player;
+    public Player _Player { get { if (_player == null) _player = GameManager._Instance._Player.GetComponent<Player>(); return _player; } }
+    private Player _player;
+
     //settlements
     //religions
     //cultures
@@ -25,6 +27,7 @@ public class WorldHandler : MonoBehaviour
     private void Awake()
     {
         _Instance = this;
+        _SeaLevel = GameObject.Find("Water").transform.position.y;
         _PlayerFaction = new Group(_Player, "Input", null, new List<Humanoid>());
         var playerGroup = new List<Humanoid>();
         playerGroup.Add(_Player);

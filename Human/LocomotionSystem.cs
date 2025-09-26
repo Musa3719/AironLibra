@@ -71,7 +71,7 @@ public class LocomotionSystem : MonoBehaviour
     public float groundMinDistance = 0.25f;
     public float groundMaxDistance = 0.5f;
     [Tooltip("Max angle to walk")]
-    [Range(30, 80)] public float slopeLimit = 75f;
+    [Range(30, 80)] public float slopeLimit = 50f;
 
     public float inputMagnitude;                      // sets the inputMagnitude to update the animations in the animator controller
     public float verticalSpeed;                       // set the verticalSpeed based on the verticalInput
@@ -89,7 +89,7 @@ public class LocomotionSystem : MonoBehaviour
 
     public void Init()
     {
-        _human = GetComponent<Humanoid>();
+        _human = transform.parent == null ? GetComponent<Humanoid>() : transform.parent.GetComponent<Humanoid>();
 
         if (_human is Player)
         {
@@ -116,7 +116,7 @@ public class LocomotionSystem : MonoBehaviour
         }
 
         // capsule collider info
-        _defaultCollider = GetComponent<CapsuleCollider>();
+        _defaultCollider = _human._MainCollider;
         _crouchCollider = transform.Find("CrouchCollider").gameObject;
         _proneCollider = transform.Find("ProneCollider").gameObject;
 
@@ -167,6 +167,8 @@ public class LocomotionSystem : MonoBehaviour
             multiplier = _human._IsSprinting ? AnimatorRunningSpeedDefault : AnimatorWalkSpeedDefault;
         else
             multiplier = _human._IsSprinting ? GetAnimatorSprintSpeed() : AnimatorRunningSpeedDefault;
+        if (_human._SizeMultiplier != 0f)
+            multiplier /= _human._SizeMultiplier;
 
         var newInput = new Vector2(verticalSpeed, horizontalSpeed);
         float lerpSpeed = _human._IsStrafing ? AimingMovementSetting.animationSmooth : FreeMovementSetting.animationSmooth;

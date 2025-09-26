@@ -67,13 +67,13 @@ public static class MovementStateMethods
             bool isRight = Vector2.SignedAngle(first, second) < 0 ? true : false;
 
             if (human._Rigidbody.linearVelocity.magnitude >= 0.1f || angle > 25f || human._LastTimeRotated + 0.25f > Time.time)
-                RotateToDirection(aimTargetDirection, human);
+                RotateToDirection(aimTargetDirection, human, rotationSpeed);
 
             if (angle > 25f && human._Rigidbody.linearVelocity.magnitude < 0.1f)
                 MovementStateMethods.TriggerRotateAnimation(human, isRight);
         }
         else
-            RotateToDirection(human._LocomotionSystem.moveDirection, human);
+            RotateToDirection(human._LocomotionSystem.moveDirection, human, rotationSpeed);
     }
 
     public static void UpdateAnimator(Humanoid human)
@@ -102,7 +102,7 @@ public static class MovementStateMethods
         else if (human is NPC npc)
         {
             npc.ArrangeMovementCorners();
-            if (npc._DirectionInput.magnitude < 0.1f)
+            if (npc._DirectionInput.magnitude < 0.15f)
             {
                 npc._LocomotionSystem.moveDirection = Vector3.Lerp(npc._LocomotionSystem.moveDirection, Vector3.zero, (npc._IsStrafing ? npc._LocomotionSystem.AimingMovementSetting.movementSmooth : npc._LocomotionSystem.FreeMovementSetting.movementSmooth) * Time.deltaTime);
                 return;
@@ -116,6 +116,19 @@ public static class MovementStateMethods
         Vector2 first = new Vector2(human._Rigidbody.linearVelocity.x, human._Rigidbody.linearVelocity.z).normalized;
         Vector2 second = new Vector2(human.transform.forward.x, human.transform.forward.z).normalized;
         return Vector2.Dot(first, second) > 0.85f;
+    }
+    public static bool IsInDeepWater(Humanoid human)
+    {
+        float yLevel = Mathf.Max(human.transform.position.y + 1f, WorldHandler._Instance._SeaLevel + 0.5f);
+        if (Physics.Raycast(new Vector3(human.transform.position.x, yLevel, human.transform.position.z), -Vector3.up, out RaycastHit hit, 1f, GameManager._Instance._TerrainSolidAndWaterMask))
+            if (hit.collider != null && hit.collider.gameObject.layer == LayerMask.NameToLayer("Water"))
+            {
+                Physics.Raycast(hit.point + Vector3.up * 0.1f, -Vector3.up, out hit, 1.5f, GameManager._Instance._TerrainAndSolidMask);
+                if (hit.collider == null)
+                    return true;
+            }
+
+        return false;
     }
     private static bool CanRunWithStamina(Humanoid human)
     {
@@ -136,17 +149,14 @@ public static class MovementStateMethods
     }
     private static void CheckSprintForPlayer(bool runInput, bool sprintInput, Player player)
     {
-        bool sprintConditions = player._DirectionInput.sqrMagnitude > 0.1f && CanRunWithStamina(player) && player._IsGrounded && IsMovingForward(player);
+        bool sprintConditions = player._DirectionInput.sqrMagnitude > 0.1f && CanRunWithStamina(player) && player._IsGrounded && IsMovingForward(player) && player._MovementState is Locomotion;
 
         if ((sprintInput || runInput) && sprintConditions)
         {
             bool isVelocityEnoughForSprint = player._Rigidbody.linearVelocity.magnitude > (player._IsStrafing ? player._LocomotionSystem.AimingMovementSetting.runningSpeed : player._LocomotionSystem.FreeMovementSetting.runningSpeed) - 2f;
             if (sprintInput && isVelocityEnoughForSprint)
             {
-                if (player._IsStrafing)
-                    player._LocomotionSystem.AimingMovementSetting.walkByDefault = false;
-                else
-                    player._LocomotionSystem.FreeMovementSetting.walkByDefault = false;
+                player._LocomotionSystem.FreeMovementSetting.walkByDefault = false;
             }
 
             if (player._DirectionInput.sqrMagnitude > 0.1f && !player._IsSprinting)
@@ -155,35 +165,26 @@ public static class MovementStateMethods
             }
             else if (player._DirectionInput.sqrMagnitude <= 0.1f && player._IsSprinting)
             {
-                if (player._IsStrafing)
-                    player._LocomotionSystem.AimingMovementSetting.walkByDefault = true;
-                else
-                    player._LocomotionSystem.FreeMovementSetting.walkByDefault = true;
+                player._LocomotionSystem.FreeMovementSetting.walkByDefault = true;
                 player._IsSprinting = false;
             }
         }
         else if (player._IsSprinting)
         {
-            if (player._IsStrafing)
-                player._LocomotionSystem.AimingMovementSetting.walkByDefault = true;
-            else
-                player._LocomotionSystem.FreeMovementSetting.walkByDefault = true;
+            player._LocomotionSystem.FreeMovementSetting.walkByDefault = true;
             player._IsSprinting = false;
         }
     }
     private static void CheckSprintForNPC(bool runInput, bool sprintInput, NPC npc)
     {
-        bool sprintConditions = npc._DirectionInput.sqrMagnitude > 0.1f && CanRunWithStamina(npc) && npc._IsGrounded && IsMovingForward(npc) && new Vector3((npc._LastCornerFromPath - npc.transform.position).x, 0f, (npc._LastCornerFromPath - npc.transform.position).z).magnitude > 0.7f;
+        bool sprintConditions = npc._DirectionInput.sqrMagnitude > 0.1f && CanRunWithStamina(npc) && npc._IsGrounded && IsMovingForward(npc) && npc._MovementState is Locomotion && new Vector3((npc._LastCornerFromPath - npc.transform.position).x, 0f, (npc._LastCornerFromPath - npc.transform.position).z).magnitude > 0.7f;
 
         if ((sprintInput || runInput) && sprintConditions)
         {
             bool isVelocityEnoughForSprint = npc._Rigidbody.linearVelocity.magnitude > (npc._IsStrafing ? npc._LocomotionSystem.AimingMovementSetting.runningSpeed : npc._LocomotionSystem.FreeMovementSetting.runningSpeed) - 2f;
             if (sprintInput && isVelocityEnoughForSprint)
             {
-                if (npc._IsStrafing)
-                    npc._LocomotionSystem.AimingMovementSetting.walkByDefault = false;
-                else
-                    npc._LocomotionSystem.FreeMovementSetting.walkByDefault = false;
+                npc._LocomotionSystem.FreeMovementSetting.walkByDefault = false;
             }
 
             if (npc._Rigidbody.linearVelocity.sqrMagnitude > 0.1f && !npc._IsSprinting)
@@ -192,19 +193,13 @@ public static class MovementStateMethods
             }
             else if (npc._Rigidbody.linearVelocity.sqrMagnitude <= 0.1f && npc._IsSprinting)
             {
-                if (npc._IsStrafing)
-                    npc._LocomotionSystem.AimingMovementSetting.walkByDefault = true;
-                else
-                    npc._LocomotionSystem.FreeMovementSetting.walkByDefault = true;
+                npc._LocomotionSystem.FreeMovementSetting.walkByDefault = true;
                 npc._IsSprinting = false;
             }
         }
         else if (npc._IsSprinting)
         {
-            if (npc._IsStrafing)
-                npc._LocomotionSystem.AimingMovementSetting.walkByDefault = true;
-            else
-                npc._LocomotionSystem.FreeMovementSetting.walkByDefault = true;
+            npc._LocomotionSystem.FreeMovementSetting.walkByDefault = true;
             npc._IsSprinting = false;
         }
     }

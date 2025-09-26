@@ -43,10 +43,17 @@ public class Locomotion : MovementState
     public void ExitState(MovementState newState)
     {
         _human._LocomotionSystem._defaultCollider.enabled = false;
+        _human._IsInCombatMode = false;
     }
     public void DoState()
     {
         //Check For State Change
+        if (MovementStateMethods.IsInDeepWater(_human))
+        {
+            _human.EnterState(new Swim(_human));
+            return;
+        }
+
         if (_stateChangeCounter > 0f)
             _stateChangeCounter -= Time.deltaTime;
         if (_stateChangeCounter <= 0f)
@@ -54,8 +61,14 @@ public class Locomotion : MovementState
             if (_human._CrouchInput && !_Human._IsInCombatMode)
             {
                 _human.EnterState(new Crouch(_human));
+                return;
             }
         }
+
+        if (!_human._FootIKComponent.enabled && _human._Animator.avatar != null && _human._IsGrounded)
+            _human._FootIKComponent.enabled = true;
+        else if ((_human._Animator.avatar == null || !_human._IsGrounded) && _human._FootIKComponent.enabled)
+            _human._FootIKComponent.enabled = false;
 
 
         MovementStateMethods.UpdateMoveDirection(_human, GameManager._Instance._MainCamera.transform);
@@ -119,21 +132,35 @@ public class Crouch : MovementState
                 _human._LocomotionSystem.MovementSpeedMultiplier = 0.9f;
         }
         //Check For State Change
+        if (MovementStateMethods.IsInDeepWater(_human))
+        {
+            _human.EnterState(new Locomotion(_human));
+            return;
+        }
+
         if (_stateChangeCounter > 0f)
             _stateChangeCounter -= Time.deltaTime;
         if (_stateChangeCounter <= 0f)
         {
-            if (_human._JumpInput || !_human._IsGrounded)
+            if ((_human._JumpInput && _waitForMoveAfterProne <= 0f) || !_human._IsGrounded)
             {
                 if (_human is Player)
                     GameManager._Instance.BufferActivated(ref WorldHandler._Instance._Player._JumpBuffer, WorldHandler._Instance._Player, ref WorldHandler._Instance._Player._JumpCoroutine);
                 _human.EnterState(new Locomotion(_human));
+                return;
             }
             else if (_human._CrouchInput && !_Human._IsInCombatMode)
             {
                 _human.EnterState(new Prone(_human));
+                return;
             }
         }
+
+
+        if (!_human._FootIKComponent.enabled && _human._Animator.avatar != null && _human._IsGrounded)
+            _human._FootIKComponent.enabled = true;
+        else if ((_human._Animator.avatar == null || !_human._IsGrounded) && _human._FootIKComponent.enabled)
+            _human._FootIKComponent.enabled = false;
 
         if (_stateChangeCounter > 0f)
             _human._Rigidbody.linearVelocity = Vector3.Lerp(_human._Rigidbody.linearVelocity, Vector3.zero, Time.deltaTime * 2f);
@@ -185,6 +212,12 @@ public class Prone : MovementState
     public void DoState()
     {
         //Check For State Change
+        if (MovementStateMethods.IsInDeepWater(_human))
+        {
+            _human.EnterState(new Locomotion(_human));
+            return;
+        }
+
         if (_stateChangeCounter > 0f)
             _stateChangeCounter -= Time.deltaTime;
         if (_stateChangeCounter <= 0f)
@@ -194,6 +227,7 @@ public class Prone : MovementState
                 if (_human is Player)
                     GameManager._Instance.BufferActivated(ref WorldHandler._Instance._Player._JumpBuffer, WorldHandler._Instance._Player, ref WorldHandler._Instance._Player._JumpCoroutine);
                 _human.EnterState(new Crouch(_human));
+                return;
             }
         }
 
@@ -211,6 +245,62 @@ public class Prone : MovementState
         if (_stateChangeCounter <= 0f)
             MovementStateMethods.ControlLocomotionType(_human);     // handle the controller locomotion type and movespeed
         MovementStateMethods.ControlRotationType(_human);       // handle the controller rotation type*/
+    }
+}
+public class Swim : MovementState
+{
+    public Humanoid _Human => _human;
+    private Humanoid _human;
+    private float _stateChangeCounter;
+    private bool _isAnimForward;
+    public Swim(Humanoid human)
+    {
+        this._human = human;
+    }
+    public void EnterState(MovementState oldState)
+    {
+        _human._Rigidbody.useGravity = false;
+        _stateChangeCounter = 0.1f;
+        _human._LocomotionSystem._defaultCollider.enabled = true;
+        _human.ChangeAnimation("Swim_Idle");
+        _human._LocomotionSystem.MovementSpeedMultiplier = 0.8f;
+        _human._FootIKComponent.enabled = false;
+    }
+
+    public void ExitState(MovementState newState)
+    {
+        _human._Rigidbody.useGravity = true;
+        _human._LocomotionSystem._defaultCollider.enabled = false;
+    }
+    public void DoState()
+    {
+        //Check For State Change
+        if (!MovementStateMethods.IsInDeepWater(_human))
+        {
+            _human.EnterState(new Locomotion(_human));
+            return;
+        }
+
+        if (_human._DirectionInput.magnitude > 0.2f && !_isAnimForward)
+        {
+            _human.ChangeAnimation("Swim_Forward", 0.4f);
+            _isAnimForward = true;
+        }
+        else if (_human._DirectionInput.magnitude < 0.2f && _isAnimForward)
+        {
+            _human.ChangeAnimation("Swim_Idle", 0.4f);
+            _isAnimForward = false;
+        }
+        MovementStateMethods.UpdateMoveDirection(_human, GameManager._Instance._MainCamera.transform);
+        MovementStateMethods.UpdateAnimator(_human);
+    }
+    public void FixedUpdate()
+    {
+        _human._IsGrounded = true;
+        float targetYVel = (WorldHandler._Instance._SeaLevel - 1.35f - _human.transform.position.y) * 7.5f;
+        _human._Rigidbody.linearVelocity = new Vector3(_human._Rigidbody.linearVelocity.x, Mathf.Lerp(_human._Rigidbody.linearVelocity.y, targetYVel, Time.deltaTime * 3f), _human._Rigidbody.linearVelocity.z);
+        MovementStateMethods.ControlLocomotionType(_human);     // handle the controller locomotion type and movespeed
+        MovementStateMethods.ControlRotationType(_human, 4f);       // handle the controller rotation type*/
     }
 }
 
