@@ -14,6 +14,9 @@ public class SoundManager : MonoBehaviour
 
     public GameObject _CurrentMusicObject { get; private set; }
     public GameObject _CurrentAtmosphereObject { get; private set; }
+    public AudioSource _RainAudioSource;
+    public AudioSource _SnowAudioSource;
+    public AudioSource _ThunderAudioSource;
 
 
     #region Sounds
@@ -43,9 +46,15 @@ public class SoundManager : MonoBehaviour
     private AudioClip _MenuMusic;
 
     [SerializeField]
-    private List<AudioClip> _ManagementMusics;
+    private List<AudioClip> _CalmMusics;
     [SerializeField]
-    private List<AudioClip> _OperationMusics;
+    private List<AudioClip> _SadMusics;
+    [SerializeField]
+    private List<AudioClip> _TavernMusics;
+    [SerializeField]
+    private List<AudioClip> _TensionMusics;
+    [SerializeField]
+    private List<AudioClip> _ActionMusics;
 
     [SerializeField]
     private AudioClip _EndingMusic;
@@ -70,22 +79,27 @@ public class SoundManager : MonoBehaviour
         }
         else if (sceneNumber == 1)
         {
-            PlayMusic(GetRandomSoundFromList(_ManagementMusics));
+            PlayMusic(GetRandomSoundFromList(_CalmMusics));
         }
-        else
-        {
-            PlayMusic(GetRandomSoundFromList(_OperationMusics));
-        }
+    }
+    private void Start()
+    {
+        if (_RainAudioSource != null)
+            _RainAudioSource.volume = Options._Instance._SoundVolume * _RainAudioSource.transform.localEulerAngles.x;
+        if (_SnowAudioSource != null)
+            _SnowAudioSource.volume = Options._Instance._SoundVolume * _SnowAudioSource.transform.localEulerAngles.x;
+        if (_ThunderAudioSource != null)
+            _ThunderAudioSource.volume = Options._Instance._SoundVolume * _ThunderAudioSource.transform.localEulerAngles.x;
     }
     private void LateUpdate()
     {
         if (SoundManager._Instance._CurrentMusicObject != null && GameManager._Instance != null)
         {
-            _CurrentMusicObject.transform.position = GameManager._Instance._MainCamera.transform.position;
+            _CurrentMusicObject.transform.position = GameManager._Instance._ListenerObj.transform.position;
         }
         if (SoundManager._Instance._CurrentAtmosphereObject != null && GameManager._Instance != null)
         {
-            _CurrentAtmosphereObject.transform.position = GameManager._Instance._MainCamera.transform.position;
+            _CurrentAtmosphereObject.transform.position = GameManager._Instance._ListenerObj.transform.position;
         }
     }
 

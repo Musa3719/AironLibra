@@ -4,12 +4,25 @@ using System.IO;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
+using UnityEngine.AddressableAssets;
+using Unity.AI.Navigation;
+using UMA;
+using UMA.CharacterSystem;
 
 public class GameManager : MonoBehaviour
 {
     public static GameManager _Instance;
+    public float _TerrainDimensionMagnitude => 1024f;
+    public int _NumberOfColumnsForTerrains => 1;
+    public int _NumberOfRowsForTerrains => 1;
+    public List<AssetReferenceGameObject>[,] _ObjectsInChunk;
+    public List<Vector3>[,] _ObjectPositionsInChunk;
+    //chest data
+    //npc data
 
+    public GameObject _ListenerObj { get { if (_Player == null) return _MainCamera; return _Player; } }
     public GameObject _MainCamera { get; private set; }
+    public GameObject _Player { get; private set; }
     public GameObject _StopScreen { get; private set; }
     public GameObject _MapScreen { get; private set; }
     public GameObject _InGameScreen { get; private set; }
@@ -17,6 +30,7 @@ public class GameManager : MonoBehaviour
     public GameObject _LoadScreen { get; private set; }
     public GameObject _SaveScreen { get; private set; }
     public GameObject _LoadingObject { get; private set; }
+    public ObjectPool _NPCPool { get; private set; }
 
     public bool _IsGameStopped { get; private set; }
 
@@ -34,10 +48,22 @@ public class GameManager : MonoBehaviour
 
     private Coroutine _slowTimeCoroutine;
 
+    private float _snowSettingsTimer;
+    private bool _isSnowing;
+    private bool _isRaining;
+    private float _isSnowingTimer;
+    private float _isRainingTimer;
+
     private void Awake()
     {
+        Shader.EnableKeyword("_USEGLOBALSNOWLEVEL");
+        Shader.EnableKeyword("_PW_GLOBAL_COVER_LAYER");
+        Shader.EnableKeyword("_PW_COVER_ENABLED");
         _Instance = this;
+        _ObjectsInChunk = new List<AssetReferenceGameObject>[_NumberOfColumnsForTerrains, _NumberOfRowsForTerrains];
+        _ObjectPositionsInChunk = new List<Vector3>[_NumberOfColumnsForTerrains, _NumberOfRowsForTerrains];
         _MainCamera = Camera.main.gameObject;
+        _Player = GameObject.FindGameObjectWithTag("Player");
 
         //Application.targetFrameRate = 60;
         _OptionsScreen = GameObject.FindGameObjectWithTag("UI").transform.Find("Options").gameObject;
@@ -51,10 +77,54 @@ public class GameManager : MonoBehaviour
             _MapScreen = GameObject.FindGameObjectWithTag("UI").transform.Find("MapScreen").gameObject;
             _InGameScreen = GameObject.FindGameObjectWithTag("UI").transform.Find("InGameScreen").gameObject;
             _SaveScreen = GameObject.FindGameObjectWithTag("UI").transform.Find("Save").gameObject;
+
+            _NPCPool = transform.Find("NPC_Pool").GetComponent<ObjectPool>();
         }
+
+    }
+    private void Start()
+    {
+        if (_LevelIndex != 0)
+            SaveSystemHandler._Instance.LoadGame(SaveSystemHandler._Instance._ActiveSave);
     }
     private void Update()
     {
+        if (_LevelIndex != 0)
+        {
+            if (Gaia.ProceduralWorldsGlobalWeather.Instance.IsSnowing)
+            {
+                _isSnowing = true;
+                _isSnowingTimer = 0f;
+            }
+            else
+            {
+                if (_isSnowingTimer < 25f)
+                    _isSnowingTimer += Time.deltaTime;
+                else
+                    _isSnowing = false;
+            }
+            if (Gaia.ProceduralWorldsGlobalWeather.Instance.IsRaining)
+            {
+                _isRaining = true;
+                _isRainingTimer = 0f;
+            }
+            else
+            {
+                if (_isRainingTimer < 25f)
+                    _isRainingTimer += Time.deltaTime;
+                else
+                    _isRaining = false;
+            }
+
+            if (_snowSettingsTimer > 0.2f)
+            {
+                Shader.SetGlobalFloat("_Global_SnowLevel", Mathf.MoveTowards(Shader.GetGlobalFloat("_Global_SnowLevel"), _isSnowing ? 0.85f : (_isRaining ? 0.3f : 0f), Time.deltaTime * ((_isSnowing || _isRaining) ? 1f : 0.25f)));
+                _snowSettingsTimer = 0f;
+            }
+            else
+                _snowSettingsTimer += Time.deltaTime;
+        }
+
         if (Input.GetButtonDown("Map") && _LevelIndex != 0)
         {
             if (_IsGameStopped)
@@ -86,6 +156,8 @@ public class GameManager : MonoBehaviour
             {
                 if (_IsGameStopped)
                 {
+                    if (_LoadingObject.activeInHierarchy) return;
+
                     if (_OptionsScreen.activeInHierarchy)
                         CloseOptionsScreen();
                     else if (_LoadScreen.activeInHierarchy)
@@ -200,13 +272,16 @@ public class GameManager : MonoBehaviour
             script.StopCoroutine(coroutine);
         coroutine = script.StartCoroutine(method);
     }
-    public void CallForAction(System.Action action, float time)
+    public void CallForAction(System.Action action, float time, bool isRealtime = false)
     {
-        StartCoroutine(CallForActionCoroutine(action, time));
+        StartCoroutine(CallForActionCoroutine(action, time, isRealtime));
     }
-    private IEnumerator CallForActionCoroutine(System.Action action, float time)
+    private IEnumerator CallForActionCoroutine(System.Action action, float time, bool isRealtime)
     {
-        yield return new WaitForSeconds(time);
+        if (isRealtime)
+            yield return new WaitForSecondsRealtime(time);
+        else
+            yield return new WaitForSeconds(time);
         action?.Invoke();
     }
     public Transform GetParent(Transform tr)
@@ -230,35 +305,157 @@ public class GameManager : MonoBehaviour
             coroutineHolderScript.StopCoroutine(coroutine);
     }
     #endregion
+    public void LoadChunk(int x, int y)
+    {
+        AddressablesController._Instance.LoadTerrainObjects(x, y);
+        //load chests
+        AddressablesController._Instance.SpawnNpcs(x, y);
+    }
+    public void UnloadChunk(int x, int y)
+    {
+        AddressablesController._Instance.DespawnNpcs(x, y);
+        //unload chests
+        AddressablesController._Instance.UnloadTerrainObjects(x, y);
+    }
+
+    public void ReloadAllChunks()
+    {
+        for (int x = 0; x < _NumberOfColumnsForTerrains; x++)
+        {
+            for (int y = 0; y < _NumberOfRowsForTerrains; y++)
+            {
+                ReloadChunk(x, y);
+            }
+        }
+    }
+    public void ReloadChunk(int x, int y)
+    {
+        if (!AddressablesController._Instance._IsChunkLoadedToScene[x, y]) return;
+
+        UnloadChunk(x, y);
+        LoadChunk(x, y);
+    }
+    public Vector2Int GetChunkFromPosition(Vector3 pos)
+    {
+        int x = (int)(pos.x / _TerrainDimensionMagnitude);
+        int y = (int)(pos.z / _TerrainDimensionMagnitude);
+        return new Vector2Int(x, y);
+    }
+    public void CreateEnvironmentPrefabToWorld(AssetReferenceGameObject objRef, Vector3 pos)
+    {
+        Vector2Int chunk = GetChunkFromPosition(pos);
+        if (_ObjectsInChunk[chunk.x, chunk.y] == null)
+            _ObjectsInChunk[chunk.x, chunk.y] = new List<AssetReferenceGameObject>();
+        _ObjectsInChunk[chunk.x, chunk.y].Add(objRef);
+        if (_ObjectPositionsInChunk[chunk.x, chunk.y] == null)
+            _ObjectPositionsInChunk[chunk.x, chunk.y] = new List<Vector3>();
+        _ObjectPositionsInChunk[chunk.x, chunk.y].Add(pos);
+
+        ReloadChunk(chunk.x, chunk.y);
+    }
+    public void DestroyEnvironmentPrefabFromWorld(int x, int y, int i)
+    {
+        if (_ObjectsInChunk[x, y] == null || i >= _ObjectsInChunk[x, y].Count) return;
+        if (_ObjectPositionsInChunk[x, y] == null || i >= _ObjectPositionsInChunk[x, y].Count) return;
+
+        _ObjectsInChunk[x, y].RemoveAt(i);
+        _ObjectPositionsInChunk[x, y].RemoveAt(i);
+
+        ReloadChunk(x, y);
+    }
+    public void SetTerrainLinks(GameObject obj)
+    {
+        var links = obj.GetComponentsInChildren<NavMeshLink>();
+        foreach (NavMeshLink item in links)
+        {
+            if (item.CompareTag("LinkWithTerrain"))
+            {
+                Physics.Raycast(item.transform.position + item.startPoint + Vector3.up * 2f, -Vector3.up, out RaycastHit hit, 5f, _TerrainAndWaterMask);
+                if (hit.collider != null)
+                    item.startPoint = hit.point - item.transform.position;
+                else
+                    Debug.LogError("LinkWithTerrain Ray Did Not Hit!!");
+            }
+        }
+    }
     public void LoadScene(int index)
     {
         LoadSceneAsync(index);
-    }
-    public void NextScene()
-    {
-        LoadSceneAsync(SceneManager.GetActiveScene().buildIndex + 1);
     }
 
     public void RestartLevel()
     {
         LoadSceneAsync(SceneManager.GetActiveScene().buildIndex);
     }
-    public void LoadSceneWithSave(int number)
-    {
-        SaveSystemHandler._Instance.ReadFile(number);
-        LoadSceneAsync(1);
-    }
+
     public void LoadSceneAsync(int index)
     {
         if (_LoadingObject.activeInHierarchy) return;
 
         _LoadingObject.SetActive(true);
-        CallForAction(() => SceneManager.LoadSceneAsync(index), 0.25f);
+        CallForAction(() => SceneManager.LoadSceneAsync(index), 0.1f, true);
     }
-    public void LoadSavedDataToGame()
+    public void StartValuesForNewGame()
     {
-        //Day = GameDataSave.Instance.SavedGameData.Day;
+        Vector3 pos = _Player.transform.position;
+        _Player.transform.position = pos;
+        bool isMale = WorldAndNpcCreation.ChangeGender(_Player.GetComponent<Player>()._UmaDynamicAvatar, Random.Range(0, 2) == 0);
+        SetRandomDNA(_Player.GetComponent<Player>());
+        SetRandomWardrobe(_Player.GetComponent<Player>(), isMale);
+
+        ushort numberOfNpcs = 50;
+        NPC createdNpc;
+        Vector2Int chunk;
+        for (int i = 0; i < numberOfNpcs; i++)
+        {
+            pos = _Player.transform.position + Vector3.forward;
+            createdNpc = Instantiate(PrefabHolder._Instance._NpcParent, pos, Quaternion.identity).GetComponent<NPC>();
+            createdNpc._NpcIndex = (ushort)i;
+            isMale = WorldAndNpcCreation.ChangeGender(createdNpc._UmaDynamicAvatar, Random.Range(0, 2) == 0);
+            SetRandomDNA(createdNpc);
+            SetRandomWardrobe(createdNpc, isMale);
+
+            chunk = GetChunkFromPosition(pos);
+            if (AddressablesController._Instance._NpcListForChunk[chunk.x, chunk.y] == null)
+                AddressablesController._Instance._NpcListForChunk[chunk.x, chunk.y] = new List<GameObject>();
+            AddressablesController._Instance._NpcListForChunk[chunk.x, chunk.y].Add(createdNpc.gameObject);
+        }
     }
+    private void SetRandomDNA(Humanoid human)
+    {
+        List<string> dnaNames = _Player.GetComponent<Player>()._UmaDynamicAvatar.activeRace.data.GetDNANames();
+        Dictionary<string, float> newDna = new Dictionary<string, float>();
+        float effectsAll = Random.Range(-0.06f, 0.06f);
+        float value;
+        SetRandomSkinColors(_Player.GetComponent<Player>()._UmaDynamicAvatar);
+        foreach (var dnaName in dnaNames)
+        {
+            value = Random.Range(0.46f, 0.54f) + effectsAll;
+            if (dnaName == "headSize" || dnaName == "armLength" || dnaName == "feetSize" || dnaName == "forearmLength" || dnaName == "handsSize" || dnaName == "legsSize")
+                value = 0.5f;
+            else if (dnaName == "otherHeight")
+                value -= 0.1f;
+            newDna.Add(dnaName, value);
+        }
+        human._DnaData = newDna;
+    }
+    private void SetRandomSkinColors(DynamicCharacterAvatar avatar)
+    {
+        float skinValue = Random.Range(0f, 2f);
+        if (skinValue > 1f) skinValue /= 2f;
+        WorldAndNpcCreation.ChangeColor(avatar, "Skin", new Color(skinValue, skinValue, skinValue, 1f));
+    }
+    private void SetRandomWardrobe(Humanoid human, bool isMale)
+    {
+        human._WardrobeData = new List<string>();
+        var hairList = WorldAndNpcCreation.GetRandomHair(isMale);
+        foreach (UMATextRecipe recipe in hairList)
+        {
+            human.WearWardrobe(recipe);
+        }
+        //set random cloth
+    }
+
     public void SaveGame(int index)
     {
         if (index == Options._Instance._LoadedGamesCount)
@@ -267,14 +464,14 @@ public class GameManager : MonoBehaviour
             PlayerPrefs.SetInt("LoadedGames", Options._Instance._LoadedGamesCount);
         }
 
-        SaveSystemHandler._Instance.WriteFile(index);
+        SaveSystemHandler._Instance.SaveGame(index);
 
         CloseSaveScreen();
     }
 
     public void DeleteSave()
     {
-        SaveSystemHandler._Instance.DeleteFile(_lastDeleteSaveIndex);
+        SaveSystemHandler._Instance.DeleteSaveFile(_lastDeleteSaveIndex);
 
         if (Options._Instance._LoadedGamesCount > 0)
         {
@@ -287,15 +484,7 @@ public class GameManager : MonoBehaviour
     }
     public void ToMenu()
     {
-        if (SoundManager._Instance._CurrentMusicObject != null)
-        {
-            Destroy(SoundManager._Instance._CurrentMusicObject);
-        }
-        if (SoundManager._Instance._CurrentAtmosphereObject != null)
-        {
-            Destroy(SoundManager._Instance._CurrentAtmosphereObject);
-        }
-        CallForAction(() => LoadSceneAsync(0), 0.25f);
+        LoadSceneAsync(0);
     }
     public void QuitGame()
     {
@@ -304,7 +493,7 @@ public class GameManager : MonoBehaviour
 
     public void PlayButtonSound()
     {
-        SoundManager._Instance.PlaySound(SoundManager._Instance._Button, _MainCamera.transform.position, 0.15f, false, UnityEngine.Random.Range(0.9f, 1.1f));
+        SoundManager._Instance.PlaySound(SoundManager._Instance._Button, _ListenerObj.transform.position, 0.15f, false, UnityEngine.Random.Range(0.9f, 1.1f));
     }
 
     public void OpenDeleteSaveScreen(int index)
@@ -317,7 +506,7 @@ public class GameManager : MonoBehaviour
         GameObject.FindGameObjectWithTag("UI").transform.Find("Load").Find("DeleteSaveScreen").gameObject.SetActive(false);
     }
 
-    private void StopGame(bool isOpeningMap, bool isPausing)
+    public void StopGame(bool isOpeningMap, bool isPausing)
     {
         if (isOpeningMap)
         {
@@ -344,6 +533,10 @@ public class GameManager : MonoBehaviour
         Time.timeScale = 1f;
         SoundManager._Instance.ContinueAllSound();
         //SoundManager.Instance.ContinueMusic();
+    }
+    public bool IsInClosedSpace(Vector3 position)
+    {
+        return Physics.Raycast(position, Vector3.up, 150f, LayerMask.GetMask("SolidObject"));
     }
 
     public void OpenOptionsScreen()
@@ -393,7 +586,7 @@ public class GameManager : MonoBehaviour
             int c = i;
             created = Instantiate(PrefabHolder._Instance._LoadPrefab, GameObject.FindGameObjectWithTag("UI").transform.Find("Load").Find("Saves"));
             created.GetComponent<Button>().onClick.AddListener(() => PlayButtonSound());
-            created.GetComponent<Button>().onClick.AddListener(() => LoadSceneWithSave(c));
+            created.GetComponent<Button>().onClick.AddListener(() => { SaveSystemHandler._Instance._ActiveSave = c; LoadScene(1); });
             created.transform.Find("DeleteButton").GetComponent<Button>().onClick.AddListener(() => PlayButtonSound());
             created.transform.Find("DeleteButton").GetComponent<Button>().onClick.AddListener(() => OpenDeleteSaveScreen(c));
         }

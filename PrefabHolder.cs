@@ -6,9 +6,10 @@ public class PrefabHolder : MonoBehaviour
 {
     public static PrefabHolder _Instance;
 
-    [SerializeField] public GameObject _LoadPrefab;
-    [SerializeField] public GameObject _SavePrefab;
-
+    public GameObject _LoadPrefab;
+    public GameObject _SavePrefab;
+    public Material _Pw_URP_Shared;
+    public GameObject _NpcParent;
     private void Awake()
     {
         _Instance = this;

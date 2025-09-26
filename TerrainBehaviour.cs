@@ -25,6 +25,7 @@ public class TerrainBehaviour : MonoBehaviour
             {
                 // her noktadaki layer aðýrlýklarý
                 float[] weights = new float[alphaMap.GetLength(2)];
+                if (weights.Length == 0) continue;
                 for (int i = 0; i < weights.Length; i++)
                 {
                     weights[i] = alphaMap[y, x, i];

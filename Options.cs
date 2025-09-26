@@ -13,7 +13,7 @@ public class Options : MonoBehaviour
     private Slider _SoundSlider;
     private Slider _MusicSlider;
 
-    public int _LoadedGamesCount;
+    public int _LoadedGamesCount { get; set; }
 
     private void Awake()
     {
@@ -60,7 +60,7 @@ public class Options : MonoBehaviour
         if (SceneManager.GetActiveScene().buildIndex != 0)
         {
             Camera cam = Camera.main;
-            
+
             if (quality == 0)
             {
                 cam.farClipPlane = 135f;
@@ -83,17 +83,23 @@ public class Options : MonoBehaviour
         {
             foreach (Transform sound in SoundManager._Instance._SoundObjectsParent.transform)
             {
-                if (newValue != 0f)
-                    sound.GetComponent<AudioSource>().volume = newValue * sound.transform.localEulerAngles.x;
+                sound.GetComponent<AudioSource>().volume = newValue * sound.transform.localEulerAngles.x;
             }
         }
 
         if (SoundManager._Instance != null && SoundManager._Instance._CurrentAtmosphereObject != null)
         {
-            if (newValue != 0f)
-                SoundManager._Instance._CurrentAtmosphereObject.GetComponent<AudioSource>().volume = newValue * SoundManager._Instance._CurrentAtmosphereObject.transform.localEulerAngles.x;
-            else
-                SoundManager._Instance._CurrentAtmosphereObject.GetComponent<AudioSource>().volume = 0f;
+            SoundManager._Instance._CurrentAtmosphereObject.GetComponent<AudioSource>().volume = 0f;
+        }
+
+        if (SoundManager._Instance != null)
+        {
+            if (SoundManager._Instance._RainAudioSource != null)
+                SoundManager._Instance._RainAudioSource.volume = newValue * SoundManager._Instance._RainAudioSource.transform.localEulerAngles.x;
+            if (SoundManager._Instance._SnowAudioSource != null)
+                SoundManager._Instance._SnowAudioSource.volume = newValue * SoundManager._Instance._SnowAudioSource.transform.localEulerAngles.x;
+            if (SoundManager._Instance._ThunderAudioSource != null)
+                SoundManager._Instance._ThunderAudioSource.volume = newValue * SoundManager._Instance._ThunderAudioSource.transform.localEulerAngles.x;
         }
     }
     private void ArrangeActiveMusicVolumes(float newValue)
