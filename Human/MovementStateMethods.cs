@@ -216,7 +216,7 @@ public static class MovementStateMethods
 
     private static bool JumpConditions(Humanoid human)
     {
-        return human._IsGrounded && MovementStateMethods.GroundAngle(human) < human._LocomotionSystem.slopeLimit && !human._IsJumping && !human._StopMove;
+        return human._IsGrounded && MovementStateMethods.GroundAngle(human) < human._LocomotionSystem.slopeLimit && !human._IsJumping && !human._StopMove && !human._IsInCombatMode;
     }
 
     private static void Jump(Humanoid human)

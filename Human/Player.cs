@@ -15,7 +15,7 @@ public class Player : Humanoid
     public float _HorizontalInput { get; set; }
     public float _VerticalInput { get; set; }
     public bool _CameraAngleInput { get; set; }
-    public bool _CameraZoomInput { get; set; }
+    public Vector2 _LastLookVectorForGamepad { get; set; }
 
     public bool _JumpBuffer;
     public bool _AttackBuffer;
@@ -49,6 +49,7 @@ public class Player : Humanoid
 public class PlayerInputController
 {
     private Player _player;
+    private float _quitCombatModeCounter;
     public PlayerInputController(Player player)
     {
         _player = player;
@@ -56,30 +57,41 @@ public class PlayerInputController
 
     public void ArrangeInput(LocomotionSystem locomotionSystem)
     {
-        if (Input.GetButtonDown("Jump"))
+        if (M_Input.GetButtonDown("Jump"))
         {
             GameManager._Instance.CoroutineCall(ref _player._JumpCoroutine, JumpBufferCoroutine(), _player);
         }
-        if (Input.GetMouseButtonDown(0))
+        if (M_Input.GetButtonDown("Fire1"))
         {
             GameManager._Instance.CoroutineCall(ref _player._AttackCoroutine, AttackBufferCoroutine(), _player);
         }
-        if (Input.GetButtonDown("CombatMode"))
+        if (M_Input.GetButton("CombatMode"))
         {
             if (_player._MovementState is Locomotion)
-                _player._IsInCombatMode = !_player._IsInCombatMode;
+            {
+                if (_quitCombatModeCounter >= 0f)
+                    _quitCombatModeCounter += Time.deltaTime;
+                if (_quitCombatModeCounter > 0.4f)
+                {
+                    _player._IsInCombatMode = !_player._IsInCombatMode;
+                    _quitCombatModeCounter = -1f;
+                }
+            }
+        }
+        else
+        {
+            _quitCombatModeCounter = 0f;
         }
 
-        _player._HorizontalInput = Input.GetAxis("Horizontal");
-        _player._VerticalInput = Input.GetAxis("Vertical");
-        _player._RunInput = Input.GetButton("Run");
-        _player._SprintInput = Input.GetButton("Sprint");
-        _player._CrouchInput = Input.GetButtonDown("Crouch");
+        _player._HorizontalInput = M_Input.GetAxis("Horizontal");
+        _player._VerticalInput = M_Input.GetAxis("Vertical");
+        _player._RunInput = M_Input.GetButton("Run");
+        _player._SprintInput = M_Input.GetButton("Sprint");
+        _player._CrouchInput = M_Input.GetButtonDown("Crouch");
         _player._JumpInput = _player._JumpBuffer;
         _player._AttackInput = _player._AttackBuffer;
-        _player._InteractInput = Input.GetButtonDown("Interact");
-        _player._CameraAngleInput = Input.GetButton("CameraAngle");
-        _player._CameraZoomInput = Input.mouseScrollDelta.y != 0f;
+        _player._InteractInput = M_Input.GetButtonDown("Interact");
+        _player._CameraAngleInput = M_Input.GetButton("CameraAngle");
 
         /*if (Input.GetButtonDown("Map"))
         {

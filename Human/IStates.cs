@@ -32,9 +32,10 @@ public class Locomotion : MovementState
     }
     public void EnterState(MovementState oldState)
     {
+        float animChangeTime = (oldState is Swim) ? 0.65f : 0.2f;
         _stateChangeCounter = 0.1f;
         _human._LocomotionSystem._defaultCollider.enabled = true;
-        _human.ChangeAnimation("Free Locomotion");
+        _human.ChangeAnimation("Free Locomotion", animChangeTime);
         _human._LocomotionSystem.MovementSpeedMultiplier = 1f;
         if (_human._Animator.avatar != null)
             _human._FootIKComponent.enabled = true;
@@ -58,7 +59,7 @@ public class Locomotion : MovementState
             _stateChangeCounter -= Time.deltaTime;
         if (_stateChangeCounter <= 0f)
         {
-            if (_human._CrouchInput && !_Human._IsInCombatMode)
+            if (_human._CrouchInput && !_human._IsJumping && _human._IsGrounded && !_Human._IsInCombatMode)
             {
                 _human.EnterState(new Crouch(_human));
                 return;
@@ -206,7 +207,6 @@ public class Prone : MovementState
 
     public void ExitState(MovementState newState)
     {
-        _human._LocomotionSystem._defaultCollider.enabled = true;
         _human._LocomotionSystem._proneCollider.SetActive(false);
     }
     public void DoState()
@@ -265,6 +265,7 @@ public class Swim : MovementState
         _human.ChangeAnimation("Swim_Idle");
         _human._LocomotionSystem.MovementSpeedMultiplier = 0.8f;
         _human._FootIKComponent.enabled = false;
+        _human._IsJumping = false;
     }
 
     public void ExitState(MovementState newState)
@@ -292,6 +293,7 @@ public class Swim : MovementState
             _isAnimForward = false;
         }
         MovementStateMethods.UpdateMoveDirection(_human, GameManager._Instance._MainCamera.transform);
+        MovementStateMethods.CheckSprint(_human);
         MovementStateMethods.UpdateAnimator(_human);
     }
     public void FixedUpdate()
@@ -386,7 +388,8 @@ public class Empty : HandState
     }
     public void DoState()
     {
-        HandStateMethods.ArrangeAimRotation(_human);
+        if (_human is Player)
+            HandStateMethods.ArrangeLookAtForCamPosition(_human as Player);
     }
 }
 public class CarryBigHandState : HandState
@@ -408,7 +411,8 @@ public class CarryBigHandState : HandState
     }
     public void DoState()
     {
-        HandStateMethods.ArrangeAimRotation(_human);
+        if (_human is Player)
+            HandStateMethods.ArrangeLookAtForCamPosition(_human as Player);
     }
 }
 public class ToolHandState : HandState
@@ -433,8 +437,8 @@ public class ToolHandState : HandState
     }
     public void DoState()
     {
-        if (!_isUsingTool)
-            HandStateMethods.ArrangeAimRotation(_human);
+        if ((_human is Player) && !_isUsingTool)
+            HandStateMethods.ArrangeLookAtForCamPosition(_human as Player);
     }
 }
 public class WeaponHandState : HandState
@@ -456,7 +460,8 @@ public class WeaponHandState : HandState
     }
     public void DoState()
     {
-        HandStateMethods.ArrangeAimRotation(_human);
+        if (_human is Player)
+            HandStateMethods.ArrangeLookAtForCamPosition(_human as Player);
     }
 }
 

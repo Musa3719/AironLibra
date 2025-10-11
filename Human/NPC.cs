@@ -26,7 +26,6 @@ public class NPC : Humanoid
     private float _cliffCheckForwardForVel;
     private float _tryToCreatePathTimer;
     private float _tryToCreatePathThreshold = 0.5f;
-
     public Vector3 _MoveTargetPosition { get; set; }
     public Vector3 _AimPosition { get; set; }
     public bool _IsOnLinkMovement { get; private set; }
@@ -37,6 +36,7 @@ public class NPC : Humanoid
     protected override void Awake()
     {
         _Rigidbody = GetComponent<Rigidbody>();
+        NPCManager.AddToList(this);
         if (transform.childCount == 0) return;
         _MainCollider = transform.GetChild(0).Find("char").Find("Root").Find("Global").Find("Position").Find("Hips").Find("MainCollider").GetComponent<CapsuleCollider>();
 
@@ -45,6 +45,7 @@ public class NPC : Humanoid
         _cornersFromPath = new List<Vector3>();
 
         _Class = new Peasant();//
+
     }
     protected override void Start()
     {
@@ -53,45 +54,50 @@ public class NPC : Humanoid
         Stop();
         base.Start();
     }
+    private void OnDestroy()
+    {
+        NPCManager.RemoveFromList(this);
+    }
 
     protected override void Update()
     {
         if (GameManager._Instance._IsGameStopped) return;
 
-        if (_Rigidbody.isKinematic)
+        if (_UmaDynamicAvatar != null && _UmaDynamicAvatar.BuildCharacterEnabled)
         {
-            NotRuntimeNPCUpdate();
-            return;
-        }
-        //disable inputs
-        _JumpInput = false;
-        _CrouchInput = false;
-        _InteractInput = false;
+            //disable inputs
+            _JumpInput = false;
+            _CrouchInput = false;
+            _InteractInput = false;
 
-        ArrangeDirection();
-        ArrangeStuck();
-        CheckNextPosition();
+            ArrangeDirection();
+            ArrangeStuck();
+            CheckNextPosition();
+        }
 
         base.Update();
 
         //testing
-        if (Input.GetKeyDown(KeyCode.F))
-            WorldAndNpcCreation.ChangeColor(_UmaDynamicAvatar, "Skin", Color.red);
-        //WorldAndNpcCreation.ChangeGender(_UmaDynamicAvatar, Random.Range(0, 2) == 0);
-        if (Input.GetKeyDown(KeyCode.E))
+        if (M_Input.GetKeyDown(KeyCode.Alpha1))
+            ChangeMuscleAmount(false);
+        if (M_Input.GetKeyDown(KeyCode.Alpha2))
+            ChangeMuscleAmount(true);
+        if (M_Input.GetKeyDown(KeyCode.Alpha3))
+            ChangeWeightAmount(false);
+        if (M_Input.GetKeyDown(KeyCode.Alpha4))
+            ChangeWeightAmount(true);
+        if (M_Input.GetKeyDown(KeyCode.F))
+            WorldAndNpcCreation.SetGender(_UmaDynamicAvatar, Random.Range(0, 2) == 0);
+        //WorldAndNpcCreation.ChangeColor(_UmaDynamicAvatar, "Skin", Color.red);
+        if (M_Input.GetKeyDown(KeyCode.E))
             DestroyNPCChild();
-        if (Input.GetKeyDown(KeyCode.M))
+        if (M_Input.GetKeyDown(KeyCode.M))
             ArrangeNewMovementTarget(GameObject.Find("TargetPositionTest").transform.position);
-        if (Input.GetKey(KeyCode.N))
+        if (M_Input.GetKey(KeyCode.N))
             _SprintInput = true;
         else
             _SprintInput = false;
 
-    }
-    private void NotRuntimeNPCUpdate()
-    {
-        if (Input.GetKeyDown(KeyCode.Q))
-            SpawnNPCChild();
     }
     public void SpawnNPCChild()
     {
@@ -100,6 +106,8 @@ public class NPC : Humanoid
         GameManager._Instance._NPCPool.GetOneFromPool().transform.SetParent(transform);
         transform.GetChild(0).localPosition = Vector3.zero;
         _Rigidbody.isKinematic = false;
+        _Rigidbody.WakeUp();
+        this.enabled = true;
 
         Awake();
         Start();
@@ -108,8 +116,14 @@ public class NPC : Humanoid
     {
         if (transform.childCount == 0) return;
 
+        if (_ChangeShaderCompleted)
+            GameManager._Instance._NPCPool.GameObjectToPool(transform.GetChild(0).gameObject);
+        else
+            Destroy(transform.GetChild(0).gameObject);
+
         _Rigidbody.isKinematic = true;
-        GameManager._Instance._NPCPool.GameObjectToPool(transform.GetChild(0).gameObject);
+        _Rigidbody.Sleep();
+        this.enabled = false;
     }
     private void ArrangeDirection()
     {
@@ -244,7 +258,7 @@ public class NPC : Humanoid
         _directionCurrent = Vector2.zero;
         _isPathEnded = true;
     }
-    private void ArrangeNewMovementTarget(Vector3 targetPos)
+    public void ArrangeNewMovementTarget(Vector3 targetPos)
     {
         _MoveTargetPosition = targetPos;
         GameManager._Instance.CoroutineCall(ref _segmentatePathCoroutine, SegmentatePath(), this);
@@ -272,7 +286,7 @@ public class NPC : Humanoid
             {
                 breakCoroutine = false;
                 segmentatedTarget = transform.position + new Vector3((_MoveTargetPosition - transform.position).x, transform.position.y, (_MoveTargetPosition - transform.position).z).normalized * _segmentationMagnitude;
-                segmentatedTarget = GetWalkableTerrainPosition(segmentatedTarget);
+                //segmentatedTarget = GetWalkableTerrainPosition(segmentatedTarget);
             }
             _currentPath = new NavMeshPath();
             NavMesh.CalculatePath(transform.position, segmentatedTarget, NavMesh.AllAreas, _currentPath);
@@ -304,6 +318,7 @@ public class NPC : Humanoid
         }
 
     }
+    /*
     private Vector3 GetWalkableTerrainPosition(Vector3 segmentatedPos)
     {
         Vector3 rayPos = segmentatedPos;
@@ -329,7 +344,7 @@ public class NPC : Humanoid
 
         Debug.LogError("Segmentation Ray Did Not Hit!");
         return segmentatedPos;
-    }
+    }*/
     public void ArrangeMovementCorners()
     {
         if (_isPathEnded) return;

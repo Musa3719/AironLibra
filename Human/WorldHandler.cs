@@ -7,8 +7,6 @@ public class WorldHandler : MonoBehaviour
 {
     public static WorldHandler _Instance;
     public float _SeaLevel { get; private set; }
-
-    public int _DaysPassed { get; private set; }
     public Calendar _Date { get; private set; }
     public Clock _Clock { get; private set; }
 
@@ -33,8 +31,6 @@ public class WorldHandler : MonoBehaviour
         playerGroup.Add(_Player);
         _Factions = new List<Group>();
         _Date = new Calendar();
-        _Date._Day = 1;
-        _Date._Month = 1;
         _Date._Year = 15;
         _Clock = new Clock();
     }
@@ -43,15 +39,32 @@ public class WorldHandler : MonoBehaviour
         if (GameManager._Instance._IsGameStopped) return;
 
         _Clock.Update();
+        //Debug.Log(Gaia.ProceduralWorldsGlobalWeather.Instance.Season + " : " + _DaysInSeason + " : " + _DaysInYear);
     }
-
+    public void InitSeasonForNewGame()
+    {
+        Shader.SetGlobalFloat("_Global_SnowLevel", 0f);
+        Gaia.ProceduralWorldsGlobalWeather.Instance.Season = 3f; //start from autumn 1
+        _Date._DaysInSeason = 1;
+        _Date._DaysInYear = 274;
+    }
     public void NextDay()
     {
+        _Date._DaysInYear++;
+        _Date._DaysInSeason++;
+        Gaia.ProceduralWorldsGlobalWeather.Instance.Season += 1f / 91.25f; //90 days for one season
+        Gaia.ProceduralWorldsGlobalWeather.Instance.Season = Gaia.ProceduralWorldsGlobalWeather.Instance.Season % 4f;
         _Date.ToNextDay();
-        _DaysPassed++;
         //world stuff
     }
-
+    public void NextYear()
+    {
+        _Date._Year++;
+        _Date._DaysInYear = 1;
+        _Date._DaysInSeason = 1;
+        Gaia.ProceduralWorldsGlobalWeather.Instance.Season = 0f;
+        //world stuff
+    }
 
     public static Humanoid GetHuman(GameObject obj)
     {
@@ -69,70 +82,54 @@ public class WorldHandler : MonoBehaviour
 }
 public class Calendar
 {
-    public int _Day;
-    public int _Month;
+    public float _Season;
     public int _Year;
+    public int _DaysInYear;
+    public int _DaysInSeason;
+
+    private bool _nextYearPermission;
+    private float _lastDaySeason;
 
     public void ToNextDay()
     {
-        if (_Day != 30)
+        _lastDaySeason = _Season;
+        _Season = Gaia.ProceduralWorldsGlobalWeather.Instance.Season;
+
+        if (_Season > 3f && !_nextYearPermission)
+            _nextYearPermission = true;
+        if (_Season < 1f && _nextYearPermission)
         {
-            _Day++;
+            _nextYearPermission = false;
+            WorldHandler._Instance.NextYear();
         }
-        else
+
+        if (((int)_lastDaySeason) != ((int)_Season))
         {
-            if (_Month != 12)
-            {
-                _Month++;
-                _Day = 1;
-            }
-            else
-            {
-                _Year++;
-                _Month = 1;
-                _Day = 1;
-            }
+            _DaysInSeason = 1;
         }
     }
 }
 public class Clock
 {
     public int _Hour;
-    public int _Minute;
+    public float _Minute;
 
-    private float _timer;
-
+    private bool _nextDayPermission;
     public void Update()
     {
-        if (_timer >= 5f)
-        {
-            _timer -= 5f;
-            MinutePassed();
-        }
-        else
-        {
-            _timer += Time.deltaTime;
-        }
+        _Hour = Gaia.GaiaAPI.GetTimeOfDayHour();
+        _Minute = Gaia.GaiaAPI.GetTimeOfDayMinute();
+
+        CheckForNextDay();
     }
-    public void MinutePassed()
+    public void CheckForNextDay()
     {
-        if (_Minute != 59)
+        if (_Hour == 23 && !_nextDayPermission)
+            _nextDayPermission = true;
+        if (_Hour == 0 && _nextDayPermission)
         {
-            _Minute++;
-        }
-        else
-        {
-            if (_Hour != 23)
-            {
-                _Hour++;
-                _Minute = 0;
-            }
-            else
-            {
-                WorldHandler._Instance.NextDay();
-                _Hour = 0;
-                _Minute = 0;
-            }
+            _nextDayPermission = false;
+            WorldHandler._Instance.NextDay();
         }
     }
 }
@@ -144,11 +141,11 @@ public class Settlement
         Town,
         City,
         Castle
-        //more and make it not binary
+        //more
     }
 
     public State _BelongsTo { get; private set; }
-    public Humanoid _Protector { get; private set; }
+    public Humanoid _Governor { get; private set; }
     public SettlementTypeEnum _SettlementType { get; private set; }
     public List<Humanoid> _Guards { get; private set; }
     public float _TaxRate { get; private set; }
@@ -166,43 +163,32 @@ public class Settlement
 
 public abstract class Building
 {
-    private List<NavMeshObstacle> _navMeshObstacles;
+    public bool _IsPublic { get; private set; }
+    public List<Humanoid> _Household { get; private set; }
+    public List<GameObject> _CarriableObject { get; private set; }
+    public List<Door> _Doors { get; private set; }
 
-    public void AddFurniture(GameObject furniture)
+    public void AddCarriableObject(GameObject carriable)
     {
-        if (_navMeshObstacles == null)
-            _navMeshObstacles = new List<NavMeshObstacle>();
+        if (_CarriableObject == null)
+            _CarriableObject = new List<GameObject>();
 
-        _navMeshObstacles.Add(furniture.GetComponent<NavMeshObstacle>());
+        _CarriableObject.Add(carriable.GetComponent<GameObject>());
     }
-    public void RemoveFurniture(GameObject furniture)
+    public void RemoveCarriableObject(GameObject carriable)
     {
-        if (_navMeshObstacles != null && _navMeshObstacles.Contains(furniture.GetComponent<NavMeshObstacle>()))
-            _navMeshObstacles.Remove(furniture.GetComponent<NavMeshObstacle>());
-    }
-    public void OpenObstacles()
-    {
-        foreach (var item in _navMeshObstacles)
-        {
-            item.enabled = true;
-        }
-    }
-    public void CloseObstacles()
-    {
-        foreach (var item in _navMeshObstacles)
-        {
-            item.enabled = false;
-        }
+        if (_CarriableObject != null && _CarriableObject.Contains(carriable.GetComponent<GameObject>()))
+            _CarriableObject.Remove(carriable.GetComponent<GameObject>());
     }
 
-    public class Private
+    public void SetValues(bool isPublic, List<Humanoid> household, List<GameObject> carriables, List<Door> doors)
     {
-        public List<Humanoid> LivesInHere { get; private set; }
+        _IsPublic = isPublic;
+        _Household = household;
+        _CarriableObject = carriables;
+        _Doors = doors;
     }
-    public class Public
-    {
-        public List<Humanoid> WorksInHere { get; private set; }
-    }
+
 }
 
 public class Religion

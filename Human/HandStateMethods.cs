@@ -4,31 +4,45 @@ using UnityEngine;
 
 public static class HandStateMethods
 {
-    public static void ArrangeAimRotation(Humanoid human)
+    public static void ArrangeLookAtForCamPosition(Player pl)
     {
-        float beforeY = human.transform.localEulerAngles.y;
-        if (human is NPC)
+        if (!pl._IsStrafing)
         {
-
+            if (CameraController._Instance._IsInCoolAngleMod)
+                pl._LookAtForCam.transform.position = pl.transform.position + Vector3.up;
+            else
+                pl._LookAtForCam.transform.position = Vector3.Lerp(pl._LookAtForCam.transform.position, pl.transform.position + Vector3.up + pl._Rigidbody.linearVelocity * 1.75f * CameraController._Instance._CameraDistance / 12f, Time.deltaTime * 5f);
         }
-        else if (human is Player)
+        else
         {
-            if (human._IsStrafing)
+            if (!M_Input.IsLastInputFromGamepadForAim())
             {
-                Ray ray = Camera.main.ScreenPointToRay(Input.mousePosition);
-                if (Physics.Raycast(ray, out human._RayFoLook, 1000f, GameManager._Instance._TerrainAndWaterMask, QueryTriggerInteraction.Ignore) && human._RayFoLook.collider != null)
+                Ray ray = Camera.main.ScreenPointToRay(M_Input.GetMousePosition());
+                if (Physics.Raycast(ray, out pl._RayFoLook, 1000f, GameManager._Instance._TerrainAndWaterMask, QueryTriggerInteraction.Ignore) && pl._RayFoLook.collider != null)
                 {
-                    Vector3 distance = human._RayFoLook.point - human.transform.position;
+                    Vector3 distance = pl._RayFoLook.point - pl.transform.position;
                     distance.y = 0f;
                     distance = Vector3.ClampMagnitude(distance, 5f);
                     distance = distance * CameraController._Instance._CameraDistance / 12f;
-                    Vector3 targetPos = human.transform.position + distance + Vector3.up;
-                    (human as Player)._LookAtForCam.transform.position = Vector3.Lerp((human as Player)._LookAtForCam.transform.position, targetPos, Time.deltaTime * 5f);
+                    if (CameraController._Instance._IsInCoolAngleMod)
+                        distance = Vector3.ClampMagnitude(distance, 1.5f);
+                    Vector3 targetPos = pl.transform.position + distance + Vector3.up;
+                    pl._LookAtForCam.transform.position = targetPos;
                 }
             }
             else
             {
-                (human as Player)._LookAtForCam.transform.position = Vector3.Lerp((human as Player)._LookAtForCam.transform.position, human.transform.position + Vector3.up + human._Rigidbody.linearVelocity * 1.75f * CameraController._Instance._CameraDistance / 12f, Time.deltaTime * 5f);
+                Vector2 newVector = M_Input.GetGamepadLookVector();
+                if (newVector.magnitude > 0.07f)
+                    pl._LastLookVectorForGamepad = newVector;
+                if (pl._LastLookVectorForGamepad.magnitude > 1f)
+                    pl._LastLookVectorForGamepad.Normalize();
+                Vector3 distance = 5f * GameManager._Instance.Vector2ToVector3(pl._LastLookVectorForGamepad);
+                distance *= CameraController._Instance._CameraDistance / 12f;
+                if (CameraController._Instance._IsInCoolAngleMod)
+                    distance = Vector3.ClampMagnitude(distance, 1.5f);
+                Vector3 targetPos = pl.transform.position + distance + Vector3.up;
+                pl._LookAtForCam.transform.position = targetPos;
             }
         }
     }
