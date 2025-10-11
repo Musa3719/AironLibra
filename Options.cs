@@ -7,6 +7,7 @@ using UnityEngine.UI;
 public class Options : MonoBehaviour
 {
     public static Options _Instance;
+    public bool _IsLastInputFromGamepadForAim { get; set; }
     public float _SoundVolume { get; private set; }
     public float _MusicVolume { get; private set; }
 

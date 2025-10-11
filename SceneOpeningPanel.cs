@@ -16,7 +16,7 @@ public class SceneOpeningPanel : MonoBehaviour
         float startTime = Time.time;
         while (Time.time < startTime + 1f)
         {
-            if (Input.GetButtonDown("Esc"))
+            if (M_Input.GetButtonDown("Esc"))
                 break;
             _image.color = new Color(_image.color.r, _image.color.g, _image.color.b, _image.color.a - Time.deltaTime * 0.7f);
             yield return null;

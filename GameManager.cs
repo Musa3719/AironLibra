@@ -24,7 +24,7 @@ public class GameManager : MonoBehaviour
     public GameObject _MainCamera { get; private set; }
     public GameObject _Player { get; private set; }
     public GameObject _StopScreen { get; private set; }
-    public GameObject _MapScreen { get; private set; }
+    public GameObject _InventoryScreen { get; private set; }
     public GameObject _InGameScreen { get; private set; }
     public GameObject _OptionsScreen { get; private set; }
     public GameObject _LoadScreen { get; private set; }
@@ -59,6 +59,7 @@ public class GameManager : MonoBehaviour
         Shader.EnableKeyword("_USEGLOBALSNOWLEVEL");
         Shader.EnableKeyword("_PW_GLOBAL_COVER_LAYER");
         Shader.EnableKeyword("_PW_COVER_ENABLED");
+        NPCManager._AllNPCs = new List<NPC>();
         _Instance = this;
         _ObjectsInChunk = new List<AssetReferenceGameObject>[_NumberOfColumnsForTerrains, _NumberOfRowsForTerrains];
         _ObjectPositionsInChunk = new List<Vector3>[_NumberOfColumnsForTerrains, _NumberOfRowsForTerrains];
@@ -74,7 +75,7 @@ public class GameManager : MonoBehaviour
         if (_LevelIndex != 0)
         {
             _StopScreen = GameObject.FindGameObjectWithTag("UI").transform.Find("StopScreen").gameObject;
-            _MapScreen = GameObject.FindGameObjectWithTag("UI").transform.Find("MapScreen").gameObject;
+            _InventoryScreen = GameObject.FindGameObjectWithTag("UI").transform.Find("InventoryScreen").gameObject;
             _InGameScreen = GameObject.FindGameObjectWithTag("UI").transform.Find("InGameScreen").gameObject;
             _SaveScreen = GameObject.FindGameObjectWithTag("UI").transform.Find("Save").gameObject;
 
@@ -86,11 +87,16 @@ public class GameManager : MonoBehaviour
     {
         if (_LevelIndex != 0)
             SaveSystemHandler._Instance.LoadGame(SaveSystemHandler._Instance._ActiveSave);
+        else
+            Time.timeScale = 1f;
     }
+    
     private void Update()
     {
         if (_LevelIndex != 0)
         {
+            NPCManager.Update();
+            
             if (Gaia.ProceduralWorldsGlobalWeather.Instance.IsSnowing)
             {
                 _isSnowing = true;
@@ -98,7 +104,7 @@ public class GameManager : MonoBehaviour
             }
             else
             {
-                if (_isSnowingTimer < 25f)
+                if (_isSnowingTimer < 20f)
                     _isSnowingTimer += Time.deltaTime;
                 else
                     _isSnowing = false;
@@ -118,39 +124,30 @@ public class GameManager : MonoBehaviour
 
             if (_snowSettingsTimer > 0.2f)
             {
-                Shader.SetGlobalFloat("_Global_SnowLevel", Mathf.MoveTowards(Shader.GetGlobalFloat("_Global_SnowLevel"), _isSnowing ? 0.85f : (_isRaining ? 0.3f : 0f), Time.deltaTime * ((_isSnowing || _isRaining) ? 1f : 0.25f)));
+                Shader.SetGlobalFloat("_Global_SnowLevel", Mathf.MoveTowards(Shader.GetGlobalFloat("_Global_SnowLevel"), _isSnowing ? 0.85f : (_isRaining ? 0.3f : 0f), 0.02f * ((_isSnowing || _isRaining) ? 0.4f : 0.15f)));
                 _snowSettingsTimer = 0f;
             }
             else
                 _snowSettingsTimer += Time.deltaTime;
         }
 
-        if (Input.GetButtonDown("Map") && _LevelIndex != 0)
+        if (M_Input.GetButtonDown("InGameMenu") && _LevelIndex != 0)
         {
             if (_IsGameStopped)
             {
-                if (_MapScreen.activeInHierarchy)
+                if (_InventoryScreen.activeInHierarchy)
+                {
                     UnstopGame();
+                    CloseInGameMenuScreen();
+                }
             }
             else
             {
                 StopGame(true, false);
+                OpenInGameMenuScreen();
             }
         }
-
-        if (Input.GetKeyDown(KeyCode.BackQuote) && _LevelIndex != 0)
-        {
-            if (_IsGameStopped && !_StopScreen.activeInHierarchy)
-            {
-                UnstopGame();
-            }
-            else
-            {
-                StopGame(false, true);
-            }
-        }
-
-        if (Input.GetButtonDown("Esc"))
+        if (M_Input.GetButtonDown("Esc"))
         {
             if (_LevelIndex != 0)
             {
@@ -183,7 +180,7 @@ public class GameManager : MonoBehaviour
             }
         }
 
-        if (Input.GetButtonDown("Language"))
+        /*if (M_Input.GetButtonDown("Language"))
         {
             if (Localization._Instance._ActiveLanguage != Language.EN)
             {
@@ -194,7 +191,7 @@ public class GameManager : MonoBehaviour
             {
                 Localization._Instance.SetLanguage(_lastActiveLanguage);
             }
-        }
+        }*/
     }
 
     #region CommonMethods
@@ -263,7 +260,7 @@ public class GameManager : MonoBehaviour
 
     public bool RandomPercentageChance(float percentage)
     {
-        return percentage >= UnityEngine.Random.Range(1f, 99f);
+        return percentage >= UnityEngine.Random.Range(float.MinValue, 100f);
     }
 
     public void CoroutineCall(ref Coroutine coroutine, IEnumerator method, MonoBehaviour script)
@@ -293,10 +290,18 @@ public class GameManager : MonoBehaviour
         }
         return parentTransform;
     }
+    public float GetTerrainOrWaterHeightOnPosition(Vector3 pos)
+    {
+        Physics.Raycast(pos + Vector3.up * 1500f, -Vector3.up, out RaycastHit hit, 2000f, _TerrainAndWaterMask);
+        if (hit.collider != null)
+            return hit.point.y;
+
+        Debug.LogError("TerrainOrWater Ray Did not Hit!");
+        return pos.y;
+    }
     public Vector3 RotateVector3OnYAxis(Vector3 baseVector, float angle)
     {
         return Quaternion.AngleAxis(angle, Vector3.up) * baseVector;
-
     }
     public void BufferActivated(ref bool buffer, MonoBehaviour coroutineHolderScript, ref Coroutine coroutine)
     {
@@ -305,6 +310,60 @@ public class GameManager : MonoBehaviour
             coroutineHolderScript.StopCoroutine(coroutine);
     }
     #endregion
+
+    public void PauseGame()
+    {
+        if (!_IsGameStopped)
+        {
+            StopGame(false, true);
+        }
+    }
+    public void UnPauseGame()
+    {
+        if (_IsGameStopped && !_StopScreen.activeInHierarchy)
+        {
+            UnstopGame();
+        }
+    }
+    public void ChangeSolidObjectShader(GameObject solidObj, bool isToTransparent)
+    {
+        var renderers = solidObj.GetComponentsInChildren<MeshRenderer>();
+        float smoothness;
+        Texture baseTexture, metallicTexture, normalTexture;
+        foreach (var renderer in renderers)
+        {
+            var mats = renderer.sharedMaterials;
+            for (int i = 0; i < mats.Length; i++)
+            {
+                if (!mats[i].name.StartsWith("PW_URP_Transparent") && !mats[i].name.StartsWith("PW_URP_Solid"))
+                {
+                    smoothness = mats[i].GetFloat("_Glossiness");
+                    baseTexture = mats[i].GetTexture("_MainTex");
+                    metallicTexture = mats[i].GetTexture("_MetallicGlossMap");
+                    normalTexture = mats[i].GetTexture("_BumpMap");
+
+                    mats[i] = isToTransparent ? PrefabHolder._Instance._Pw_URP_Transparent : PrefabHolder._Instance._Pw_URP_Solid;
+
+                    MaterialPropertyBlock block = new MaterialPropertyBlock();
+                    if (baseTexture != null)
+                        block.SetTexture("_MainTex", baseTexture);
+                    if (normalTexture != null)
+                        block.SetTexture("_BumpMap", normalTexture);
+                    if (metallicTexture != null)
+                        block.SetTexture("_MetallicGlossMap", metallicTexture);
+                    block.SetFloat("_Glossiness", smoothness);
+
+                    renderer.SetPropertyBlock(block, i);
+                }
+                else
+                {
+                    mats[i] = isToTransparent ? PrefabHolder._Instance._Pw_URP_Transparent : PrefabHolder._Instance._Pw_URP_Solid;
+                }
+            }
+            renderer.sharedMaterials = mats;
+        }
+    }
+
     public void LoadChunk(int x, int y)
     {
         AddressablesController._Instance.LoadTerrainObjects(x, y);
@@ -397,29 +456,44 @@ public class GameManager : MonoBehaviour
     }
     public void StartValuesForNewGame()
     {
-        Vector3 pos = _Player.transform.position;
-        _Player.transform.position = pos;
-        bool isMale = WorldAndNpcCreation.ChangeGender(_Player.GetComponent<Player>()._UmaDynamicAvatar, Random.Range(0, 2) == 0);
-        SetRandomDNA(_Player.GetComponent<Player>());
-        SetRandomWardrobe(_Player.GetComponent<Player>(), isMale);
+        WorldHandler._Instance.InitSeasonForNewGame();
 
-        ushort numberOfNpcs = 50;
+        Vector3 pos = _Player.transform.position;//change it with player start pos
+        _Player.transform.position = pos;
+
+        WorldAndNpcCreation.SetGender(WorldHandler._Instance._Player._UmaDynamicAvatar, WorldHandler._Instance._Player._IsMale);
+        SetRandomDNA(WorldHandler._Instance._Player);
+        SetRandomWardrobe(WorldHandler._Instance._Player, WorldHandler._Instance._Player._IsMale);
+
+        ushort numberOfNpcs = 20;
         NPC createdNpc;
         Vector2Int chunk;
         for (int i = 0; i < numberOfNpcs; i++)
         {
-            pos = _Player.transform.position + Vector3.forward;
-            createdNpc = Instantiate(PrefabHolder._Instance._NpcParent, pos, Quaternion.identity).GetComponent<NPC>();
+            createdNpc = Instantiate(PrefabHolder._Instance._NpcParent).GetComponent<NPC>();
+            SetRandomNPCValues(createdNpc);
+            pos = GetSpawnPosition(createdNpc);
+            createdNpc.transform.position = pos;
             createdNpc._NpcIndex = (ushort)i;
-            isMale = WorldAndNpcCreation.ChangeGender(createdNpc._UmaDynamicAvatar, Random.Range(0, 2) == 0);
+            createdNpc._IsMale = false;
             SetRandomDNA(createdNpc);
-            SetRandomWardrobe(createdNpc, isMale);
+            SetRandomWardrobe(createdNpc, createdNpc._IsMale);
 
             chunk = GetChunkFromPosition(pos);
             if (AddressablesController._Instance._NpcListForChunk[chunk.x, chunk.y] == null)
                 AddressablesController._Instance._NpcListForChunk[chunk.x, chunk.y] = new List<GameObject>();
             AddressablesController._Instance._NpcListForChunk[chunk.x, chunk.y].Add(createdNpc.gameObject);
         }
+    }
+    private void SetRandomNPCValues(NPC npc)
+    {
+        //gender, name, characteristics, social class, location, religion and culture, group, family, past events, equipment and ownerships, current goals
+    }
+    private Vector3 GetSpawnPosition(NPC npc)
+    {
+        Vector3 pos = _Player.transform.position + new Vector3(Random.Range(-1f, 1f), 0f, Random.Range(-1f, 1f)) * Random.Range(1f, 5f);
+        pos.y = GetTerrainOrWaterHeightOnPosition(pos);
+        return pos;
     }
     private void SetRandomDNA(Humanoid human)
     {
@@ -433,8 +507,8 @@ public class GameManager : MonoBehaviour
             value = Random.Range(0.46f, 0.54f) + effectsAll;
             if (dnaName == "headSize" || dnaName == "armLength" || dnaName == "feetSize" || dnaName == "forearmLength" || dnaName == "handsSize" || dnaName == "legsSize")
                 value = 0.5f;
-            else if (dnaName == "otherHeight")
-                value -= 0.1f;
+            else if (dnaName == "height")
+                value -= 0.05f;
             newDna.Add(dnaName, value);
         }
         human._DnaData = newDna;
@@ -447,13 +521,17 @@ public class GameManager : MonoBehaviour
     }
     private void SetRandomWardrobe(Humanoid human, bool isMale)
     {
-        human._WardrobeData = new List<string>();
-        var hairList = WorldAndNpcCreation.GetRandomHair(isMale);
-        foreach (UMATextRecipe recipe in hairList)
+        human._WardrobeData = new List<UMATextRecipe>();
+        var list = WorldAndNpcCreation.GetRandomHair(isMale);
+        foreach (UMATextRecipe recipe in list)
         {
             human.WearWardrobe(recipe);
         }
-        //set random cloth
+        list = WorldAndNpcCreation.GetRandomCloth(isMale);
+        foreach (UMATextRecipe recipe in list)
+        {
+            human.WearWardrobe(recipe);
+        }
     }
 
     public void SaveGame(int index)
@@ -506,11 +584,11 @@ public class GameManager : MonoBehaviour
         GameObject.FindGameObjectWithTag("UI").transform.Find("Load").Find("DeleteSaveScreen").gameObject.SetActive(false);
     }
 
-    public void StopGame(bool isOpeningMap, bool isPausing)
+    public void StopGame(bool isOpeningInventory, bool isPausing)
     {
-        if (isOpeningMap)
+        if (isOpeningInventory)
         {
-            _MapScreen.SetActive(true);
+            _InventoryScreen.SetActive(true);
             _InGameScreen.SetActive(false);
         }
         else if (!isPausing)
@@ -526,7 +604,7 @@ public class GameManager : MonoBehaviour
     public void UnstopGame()
     {
         _StopScreen.SetActive(false);
-        _MapScreen.SetActive(false);
+        _InventoryScreen.SetActive(false);
         _InGameScreen.SetActive(true);
         CloseOptionsScreen(false);
         _IsGameStopped = false;
@@ -539,6 +617,14 @@ public class GameManager : MonoBehaviour
         return Physics.Raycast(position, Vector3.up, 150f, LayerMask.GetMask("SolidObject"));
     }
 
+    public void OpenInGameMenuScreen()
+    {
+
+    }
+    public void CloseInGameMenuScreen()
+    {
+
+    }
     public void OpenOptionsScreen()
     {
         if (GameManager._Instance._LevelIndex == 0)

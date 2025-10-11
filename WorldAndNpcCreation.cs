@@ -5,25 +5,17 @@ using System.Collections.Generic;
 
 public static class WorldAndNpcCreation
 {
-    public static bool ChangeGender(DynamicCharacterAvatar avatar, bool isToMale)
+    public static void SetGender(DynamicCharacterAvatar avatar, bool isMale)
     {
-        if (avatar == null) return true;
+        if (avatar == null) return;
 
-        if (isToMale)
+        if (isMale)
         {
-            if (avatar.activeRace.name.StartsWith("HumanFemale"))
-            {
-                avatar.ChangeRace("HumanMale", DynamicCharacterAvatar.ChangeRaceOptions.none);
-            }
-            return true;
+            avatar.ChangeRace("HumanMale", DynamicCharacterAvatar.ChangeRaceOptions.none);
         }
         else
         {
-            if (avatar.activeRace.name.StartsWith("HumanMale"))
-            {
-                avatar.ChangeRace("HumanFemale", DynamicCharacterAvatar.ChangeRaceOptions.none);
-            }
-            return false;
+            avatar.ChangeRace("HumanFemale", DynamicCharacterAvatar.ChangeRaceOptions.none);
         }
     }
     public static void ChangeColor(DynamicCharacterAvatar avatar, string colorName, Color newColor)
@@ -40,8 +32,79 @@ public static class WorldAndNpcCreation
     }
     public static List<UMATextRecipe> GetRandomHair(bool isMale)
     {
-        List<UMATextRecipe> uMATextRecipes = new List<UMATextRecipe>();
-        ////////////////////////////////
-        return uMATextRecipes;
+        List<UMATextRecipe> umaTextRecipes = new List<UMATextRecipe>();
+        if (isMale)
+        {
+            int random = Random.Range(0, 3);
+            if (random == 0)
+                umaTextRecipes.Add(UMAAssetIndexer.Instance.GetRecipe("MaleHair1"));
+            else if (random == 1)
+                umaTextRecipes.Add(UMAAssetIndexer.Instance.GetRecipe("MaleHair2"));
+            else if (random == 2)
+                umaTextRecipes.Add(UMAAssetIndexer.Instance.GetRecipe("MaleHair3"));
+
+            random = Random.Range(0, 5);
+            if (random == 0)
+                umaTextRecipes.Add(UMAAssetIndexer.Instance.GetRecipe("MaleBeard1"));
+            else if (random == 1)
+                umaTextRecipes.Add(UMAAssetIndexer.Instance.GetRecipe("MaleBeard2"));
+            else if (random == 2)
+                umaTextRecipes.Add(UMAAssetIndexer.Instance.GetRecipe("MaleBeard3"));
+        }
+        else
+        {
+            int random = Random.Range(0, 3);
+            if (random == 0)
+                umaTextRecipes.Add(UMAAssetIndexer.Instance.GetRecipe("FemaleHair1"));
+            else if (random == 1)
+                umaTextRecipes.Add(UMAAssetIndexer.Instance.GetRecipe("FemaleHair2"));
+            else if (random == 2)
+                umaTextRecipes.Add(UMAAssetIndexer.Instance.GetRecipe("FemaleHair3"));
+        }
+
+        return umaTextRecipes;
+    }
+
+    public static List<UMATextRecipe> GetRandomCloth(bool isMale)
+    {
+        List<UMATextRecipe> umaTextRecipes = new List<UMATextRecipe>();
+        if (isMale)
+        {
+            umaTextRecipes.Add(UMAAssetIndexer.Instance.GetRecipe("MaleDefaultUnderwear"));
+
+            int random = Random.Range(0, 3);
+            if (random == 0)
+                umaTextRecipes.Add(UMAAssetIndexer.Instance.GetRecipe("MaleShirt1"));
+            else if (random == 1)
+                umaTextRecipes.Add(UMAAssetIndexer.Instance.GetRecipe("MaleShirt2"));
+            else if (random == 2)
+                umaTextRecipes.Add(UMAAssetIndexer.Instance.GetRecipe("MaleShirt3"));
+
+            random = Random.Range(0, 2);
+            if (random == 0)
+                umaTextRecipes.Add(UMAAssetIndexer.Instance.GetRecipe("MaleShorts1"));
+            else if (random == 1)
+                umaTextRecipes.Add(UMAAssetIndexer.Instance.GetRecipe("MaleShorts2"));
+        }
+        else
+        {
+            umaTextRecipes.Add(UMAAssetIndexer.Instance.GetRecipe("FemaleDefaultUnderwear"));
+
+            int random = Random.Range(0, 3);
+            if (random == 0)
+                umaTextRecipes.Add(UMAAssetIndexer.Instance.GetRecipe("FemaleShirt1"));
+            else if (random == 1)
+                umaTextRecipes.Add(UMAAssetIndexer.Instance.GetRecipe("FemaleShirt2"));
+            else if (random == 2)
+                umaTextRecipes.Add(UMAAssetIndexer.Instance.GetRecipe("FemaleShirt3"));
+
+            random = Random.Range(0, 2);
+            if (random == 0)
+                umaTextRecipes.Add(UMAAssetIndexer.Instance.GetRecipe("FemalePants1"));
+            else if (random == 1)
+                umaTextRecipes.Add(UMAAssetIndexer.Instance.GetRecipe("FemalePants2"));
+        }
+
+        return umaTextRecipes;
     }
 }

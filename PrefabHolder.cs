@@ -8,8 +8,11 @@ public class PrefabHolder : MonoBehaviour
 
     public GameObject _LoadPrefab;
     public GameObject _SavePrefab;
-    public Material _Pw_URP_Shared;
     public GameObject _NpcParent;
+    public Material _Pw_URP_Shared;
+    public Material _Pw_URP_Solid;
+    public Material _Pw_URP_Transparent;
+
     private void Awake()
     {
         _Instance = this;

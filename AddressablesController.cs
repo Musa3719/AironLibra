@@ -10,8 +10,7 @@ public class AddressablesController : MonoBehaviour
 
     public static AddressablesController _Instance;
     public bool[,] _IsChunkLoadedToScene { get; private set; }
-    private List<AsyncOperationHandle<GameObject>>[,] _handlesForSpawned;
-
+    public List<AsyncOperationHandle<GameObject>>[,] _HandlesForSpawned { get; private set; }
     public List<GameObject>[,] _NpcListForChunk { get; private set; }
     
     #region Method Parameters For Optimization
@@ -28,7 +27,7 @@ public class AddressablesController : MonoBehaviour
     }
     private void Start()
     {
-        _handlesForSpawned = new List<AsyncOperationHandle<GameObject>>[GameManager._Instance._NumberOfColumnsForTerrains, GameManager._Instance._NumberOfRowsForTerrains];
+        _HandlesForSpawned = new List<AsyncOperationHandle<GameObject>>[GameManager._Instance._NumberOfColumnsForTerrains, GameManager._Instance._NumberOfRowsForTerrains];
     }
     private void Update()
     {
@@ -48,12 +47,12 @@ public class AddressablesController : MonoBehaviour
     public void UnloadTerrainObjects(int x, int y)
     {
         if (!_IsChunkLoadedToScene[x, y]) return;
-        if (_handlesForSpawned[x, y] == null) return;
+        if (_HandlesForSpawned[x, y] == null) return;
 
         _IsChunkLoadedToScene[x, y] = false;
-        for (int i = 0; i < _handlesForSpawned[x, y].Count; i++)
+        for (int i = 0; i < _HandlesForSpawned[x, y].Count; i++)
         {
-            var handle = _handlesForSpawned[x, y][i];
+            var handle = _HandlesForSpawned[x, y][i];
             if (handle.IsDone)
             {
                 GameObject obj = handle.Result;
@@ -77,7 +76,7 @@ public class AddressablesController : MonoBehaviour
                 };
             }
         }
-        _handlesForSpawned[x, y].Clear();
+        _HandlesForSpawned[x, y].Clear();
     }
     public void LoadTerrainObjects(int x, int y)
     {
@@ -97,8 +96,8 @@ public class AddressablesController : MonoBehaviour
     }
     private void SpawnObj(int x, int y, int i)
     {
-        if (_handlesForSpawned[x, y] == null)
-            _handlesForSpawned[x, y] = new List<AsyncOperationHandle<GameObject>>();
+        if (_HandlesForSpawned[x, y] == null)
+            _HandlesForSpawned[x, y] = new List<AsyncOperationHandle<GameObject>>();
 
         Vector3 pos = _objectPositionsWillBeSpawned[i]; //for action buffer
         _objectsWillBeSpawned[i].InstantiateAsync().Completed += (handle) =>
@@ -107,7 +106,9 @@ public class AddressablesController : MonoBehaviour
             GameObject obj = handle.Result;
             obj.transform.position = pos;
             GameManager._Instance.SetTerrainLinks(obj);
-            _handlesForSpawned[x, y].Add(handle);
+            _HandlesForSpawned[x, y].Add(handle);
+            handle.Result.GetComponent<CarriableObject>()._Handle = handle;
+            handle.Result.GetComponent<CarriableObject>()._Chunk = new Vector2Int(x, y);
         };
     }
 

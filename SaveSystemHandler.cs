@@ -27,11 +27,17 @@ public class SaveSystemHandler : MonoBehaviour
         PlayerData playerData = GetPlayerData();
         GameData data = new GameData
         {
-            _SnowLevel = Shader.GetGlobalFloat("_Global_SnowLevel"),
             _ObjectsInChunk = GameManager._Instance._ObjectsInChunk,
             _ObjectPositionsInChunk = GameManager._Instance._ObjectPositionsInChunk,
             _NpcData = npcData,
-            _PlayerData = playerData
+            _PlayerData = playerData,
+            _SnowLevel = Shader.GetGlobalFloat("_Global_SnowLevel"),
+            _DaysInYear = WorldHandler._Instance._Date._DaysInYear,
+            _DaysInSeason = WorldHandler._Instance._Date._DaysInSeason,
+            _Hour = WorldHandler._Instance._Clock._Hour,
+            _Minute = WorldHandler._Instance._Clock._Minute,
+            _Season = WorldHandler._Instance._Date._Season,
+            _Year = WorldHandler._Instance._Date._Year
         };
 
         SaveGameData(index, data);
@@ -47,6 +53,16 @@ public class SaveSystemHandler : MonoBehaviour
             GameManager._Instance._ObjectsInChunk = data._ObjectsInChunk;
             GameManager._Instance._ObjectPositionsInChunk = data._ObjectPositionsInChunk;
             Shader.SetGlobalFloat("_Global_SnowLevel", data._SnowLevel);
+
+            WorldHandler._Instance._Date._DaysInYear = data._DaysInYear;
+            WorldHandler._Instance._Date._DaysInSeason = data._DaysInSeason;
+            WorldHandler._Instance._Clock._Hour = data._Hour;
+            WorldHandler._Instance._Clock._Minute = data._Minute;
+            Gaia.GaiaAPI.SetTimeOfDayHour(data._Hour);
+            Gaia.GaiaAPI.SetTimeOfDayMinute(data._Minute);
+            WorldHandler._Instance._Date._Season = data._Season;
+            WorldHandler._Instance._Date._Year = data._Year;
+            Gaia.ProceduralWorldsGlobalWeather.Instance.Season = data._Season;
 
             WorldHandler._Instance._Player.transform.position = data._PlayerData._Pos;
             WorldHandler._Instance._Player.transform.localEulerAngles = data._PlayerData._Rot;
@@ -157,6 +173,12 @@ public class GameData
     public PlayerData _PlayerData;
     public List<NpcData> _NpcData;
     public float _SnowLevel;
+    public int _DaysInYear;
+    public int _DaysInSeason;
+    public int _Hour;
+    public float _Minute;
+    public float _Season;
+    public int _Year;
 }
 
 [System.Serializable]
@@ -165,7 +187,7 @@ public class PlayerData
     public Vector3 _Pos;
     public Vector3 _Rot;
     public Dictionary<string, float> _DnaData;
-    public List<string> _WardrobeData;
+    public List<UMA.UMATextRecipe> _WardrobeData;
 }
 
 [System.Serializable]
@@ -175,6 +197,6 @@ public class NpcData
     public Vector3 _Pos;
     public Vector3 _Rot;
     public Dictionary<string, float> _DnaData;
-    public List<string> _WardrobeData;
+    public List<UMA.UMATextRecipe> _WardrobeData;
 }
 
