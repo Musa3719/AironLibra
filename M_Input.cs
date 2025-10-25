@@ -19,7 +19,7 @@ public static class M_Input
     public static float GetCameraZoomInput()
     {
         float value = 0f;
-        if (Gamepad.current == null)
+        if (Gamepad.current != null)
             value += Gamepad.current.dpad.value.y / 10f;
         if (Keyboard.current != null)
             value += Input.mouseScrollDelta.y;
@@ -28,7 +28,7 @@ public static class M_Input
     public static float GetCameraRotateInput()
     {
         float value = 0f;
-        if (Gamepad.current == null)
+        if (Gamepad.current != null)
             value += Gamepad.current.dpad.value.x;
         if (Keyboard.current != null)
             value += Input.mousePositionDelta.normalized.x;
@@ -50,13 +50,13 @@ public static class M_Input
     {
         return GetAxisKeyboard(axisName) + GetAxisGamepad(axisName);
     }
-    public static float GetAxisKeyboard(string axisName)
+    private static float GetAxisKeyboard(string axisName)
     {
         if (Keyboard.current == null) return 0f;
 
         return Input.GetAxis(axisName);
     }
-    public static float GetAxisGamepad(string axisName)
+    private static float GetAxisGamepad(string axisName)
     {
         if (Gamepad.current == null) return 0f;
 
@@ -89,13 +89,13 @@ public static class M_Input
     {
         return GetButtonDownKeyboard(buttonName) || GetButtonDownGamepad(buttonName);
     }
-    public static bool GetButtonDownKeyboard(string buttonName)
+    private static bool GetButtonDownKeyboard(string buttonName)
     {
         if (Keyboard.current == null) return false;
 
         return Input.GetButtonDown(buttonName);
     }
-    public static bool GetButtonDownGamepad(string buttonName)
+    private static bool GetButtonDownGamepad(string buttonName)
     {
         if (Gamepad.current == null) return false;
 
@@ -103,6 +103,10 @@ public static class M_Input
         {
             //case "Language":
             //return Gamepad.current.rightShoulder.isPressed;
+            case "UIRight":
+                return Gamepad.current.rightShoulder.wasPressedThisFrame;
+            case "UILeft":
+                return Gamepad.current.leftShoulder.wasPressedThisFrame;
             case "InGameMenu":
                 return Gamepad.current.selectButton.wasPressedThisFrame;
             case "Fire1":
@@ -110,7 +114,7 @@ public static class M_Input
             case "Fire2":
                 return Gamepad.current.leftShoulder.wasPressedThisFrame;
             case "Esc":
-                return Gamepad.current.startButton.wasPressedThisFrame;
+                return Gamepad.current.startButton.wasPressedThisFrame || ((GameManager._Instance._GameHUD == null || !GameManager._Instance._GameHUD.activeInHierarchy) && Gamepad.current.buttonEast.wasPressedThisFrame);
             case "Interact":
                 return Gamepad.current.buttonWest.wasPressedThisFrame;
             case "Cancel":
@@ -133,13 +137,13 @@ public static class M_Input
     {
         return GetButtonKeyboard(buttonName) || GetButtonGamepad(buttonName);
     }
-    public static bool GetButtonKeyboard(string buttonName)
+    private static bool GetButtonKeyboard(string buttonName)
     {
         if (Keyboard.current == null) return false;
 
         return Input.GetButton(buttonName);
     }
-    public static bool GetButtonGamepad(string buttonName)
+    private static bool GetButtonGamepad(string buttonName)
     {
         if (Gamepad.current == null) return false;
 
@@ -166,13 +170,13 @@ public static class M_Input
         return GetButtonUpKeyboard(buttonName) || GetButtonUpGamepad(buttonName);
     }
 
-    public static bool GetButtonUpKeyboard(string buttonName)
+    private static bool GetButtonUpKeyboard(string buttonName)
     {
         if (Keyboard.current == null) return false;
 
         return Input.GetButtonUp(buttonName);
     }
-    public static bool GetButtonUpGamepad(string buttonName)
+    private static bool GetButtonUpGamepad(string buttonName)
     {
         if (Gamepad.current == null) return false;
 

@@ -6,6 +6,7 @@ public class ObjectPool : MonoBehaviour
     [SerializeField] private GameObject _poolObjectPrefab;
     [SerializeField] [Range(1, 1000)] private float _poolMaxCount;
     [SerializeField] [Range(0.1f, 10f)] private float _createForPoolThreshold;
+    [SerializeField] private bool _isDefaultCreationEnabled = true;
 
     private List<GameObject> _objectPool;
     private float _arrangePoolElementTimer;
@@ -18,10 +19,14 @@ public class ObjectPool : MonoBehaviour
     {
         if (_objectPool.Count < _poolMaxCount)
         {
-            if (_arrangePoolElementTimer >= _createForPoolThreshold)
-                AddToPool(CreateForPool());
-            else
-                _arrangePoolElementTimer += Time.deltaTime;
+            if (_isDefaultCreationEnabled)
+            {
+                if (_arrangePoolElementTimer >= _createForPoolThreshold)
+                    AddToPool(CreateForPool());
+                else
+                    _arrangePoolElementTimer += Time.deltaTime;
+            }
+
         }
         else if (_objectPool.Count > _poolMaxCount)
         {
@@ -43,20 +48,30 @@ public class ObjectPool : MonoBehaviour
         obj.transform.parent = transform;
         _objectPool[_objectPool.Count - 1].SetActive(false);
     }
-    private GameObject SelectFromPool(bool isActivating = true)
+    private GameObject SelectFromPool(bool isActivating = true, int index = -1)
     {
-        GameObject objFromPool = _objectPool[0];
-        _objectPool.RemoveAt(0);
+        if (index == -1)
+            index = 0;
+
+        GameObject objFromPool = _objectPool[index];
+        _objectPool.RemoveAt(index);
         objFromPool.SetActive(isActivating);
         return objFromPool;
     }
 
-    public GameObject GetOneFromPool()
+    public GameObject GetOneFromPool(GameObject targetPoolObject = null)
     {
         if (_objectPool.Count == 0)
             return CreateForPool();
         else
+        {
+            if (targetPoolObject != null && _objectPool.Contains(targetPoolObject))
+            {
+                int index = _objectPool.IndexOf(targetPoolObject);
+                return SelectFromPool(true, index);
+            }
             return SelectFromPool();
+        }
     }
     public void GameObjectToPool(GameObject obj)
     {

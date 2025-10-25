@@ -9,6 +9,15 @@ public class SaveSystemHandler : MonoBehaviour
     public static SaveSystemHandler _Instance;
     public int _ActiveSave { get; set; }
 
+
+    public bool _IsSettingPlayerDataForCreation { get; set; }
+    public string _PlayerNameCreation { get; set; }
+    public bool _PlayerIsMaleForCreation { get; set; }
+    public Dictionary<string, float> _PlayerDnaDataForCreation { get; set; }
+    public List<UMA.UMATextRecipe> _PlayerWardrobeDataForCreation { get; set; }
+    public Dictionary<string, Color> _PlayerCharacterColorsForCreation { get; set; }
+
+
     private string SavePath(int index) => Path.Combine(Application.persistentDataPath, "Save" + index.ToString() + ".json");
     private void Awake()
     {
@@ -66,7 +75,9 @@ public class SaveSystemHandler : MonoBehaviour
 
             WorldHandler._Instance._Player.transform.position = data._PlayerData._Pos;
             WorldHandler._Instance._Player.transform.localEulerAngles = data._PlayerData._Rot;
+            WorldHandler._Instance._Player._IsMale = data._PlayerData._IsMale;
             WorldHandler._Instance._Player._DnaData = data._PlayerData._DnaData;
+            WorldHandler._Instance._Player._CharacterColors = data._PlayerData._CharacterColors;
             WorldHandler._Instance._Player._WardrobeData = data._PlayerData._WardrobeData;
             if (WorldHandler._Instance._Player._UmaDynamicAvatar.BuildCharacterEnabled)
             {
@@ -83,7 +94,9 @@ public class SaveSystemHandler : MonoBehaviour
                 npc._NpcIndex = data._NpcData[i]._NpcIndex;
                 npc.transform.position = data._NpcData[i]._Pos;
                 npc.transform.localEulerAngles = data._NpcData[i]._Rot;
+                npc._IsMale = data._NpcData[i]._IsMale;
                 npc._DnaData = data._NpcData[i]._DnaData;
+                npc._CharacterColors = data._NpcData[i]._CharacterColors;
                 npc._WardrobeData = data._NpcData[i]._WardrobeData;
 
                 if (npc._UmaDynamicAvatar != null && npc._UmaDynamicAvatar.BuildCharacterEnabled)
@@ -108,7 +121,9 @@ public class SaveSystemHandler : MonoBehaviour
         PlayerData data = new PlayerData();
         data._Pos = WorldHandler._Instance._Player.transform.position;
         data._Rot = WorldHandler._Instance._Player.transform.localEulerAngles;
+        data._IsMale = WorldHandler._Instance._Player._IsMale;
         data._DnaData = WorldHandler._Instance._Player._DnaData;
+        data._CharacterColors = WorldHandler._Instance._Player._CharacterColors;
         data._WardrobeData = WorldHandler._Instance._Player._WardrobeData;
         return data;
     }
@@ -117,14 +132,18 @@ public class SaveSystemHandler : MonoBehaviour
         List<NpcData> data = new List<NpcData>();
         NpcData npcData;
         GameObject[] allNpcs = GameObject.FindGameObjectsWithTag("NPC");
+        NPC tempNPC;
         for (int i = 0; i < allNpcs.Length; i++)
         {
             npcData = new NpcData();
-            npcData._NpcIndex = allNpcs[i].GetComponent<NPC>()._NpcIndex;
-            npcData._Pos = allNpcs[i].GetComponent<NPC>().transform.position;
-            npcData._Rot = allNpcs[i].GetComponent<NPC>().transform.localEulerAngles;
-            npcData._DnaData = allNpcs[i].GetComponent<NPC>()._DnaData;
-            npcData._WardrobeData = allNpcs[i].GetComponent<NPC>()._WardrobeData;
+            tempNPC = allNpcs[i].GetComponent<NPC>();
+            npcData._NpcIndex = tempNPC._NpcIndex;
+            npcData._Pos = tempNPC.transform.position;
+            npcData._Rot = tempNPC.transform.localEulerAngles;
+            npcData._IsMale = tempNPC._IsMale;
+            npcData._DnaData = tempNPC._DnaData;
+            npcData._CharacterColors = tempNPC._CharacterColors;
+            npcData._WardrobeData = tempNPC._WardrobeData;
             data.Add(npcData);
         }
         return data;
@@ -186,7 +205,9 @@ public class PlayerData
 {
     public Vector3 _Pos;
     public Vector3 _Rot;
+    public bool _IsMale;
     public Dictionary<string, float> _DnaData;
+    public Dictionary<string, Color> _CharacterColors;
     public List<UMA.UMATextRecipe> _WardrobeData;
 }
 
@@ -196,7 +217,9 @@ public class NpcData
     public ushort _NpcIndex;
     public Vector3 _Pos;
     public Vector3 _Rot;
+    public bool _IsMale;
     public Dictionary<string, float> _DnaData;
+    public Dictionary<string, Color> _CharacterColors;
     public List<UMA.UMATextRecipe> _WardrobeData;
 }
 

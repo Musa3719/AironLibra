@@ -24,8 +24,11 @@ public class GameManager : MonoBehaviour
     public GameObject _MainCamera { get; private set; }
     public GameObject _Player { get; private set; }
     public GameObject _StopScreen { get; private set; }
+    public GameObject _InGameMenu { get; private set; }
     public GameObject _InventoryScreen { get; private set; }
-    public GameObject _InGameScreen { get; private set; }
+    public GameObject _MapScreen { get; private set; }
+    public GameObject _DialogueScreen { get; private set; }
+    public GameObject _GameHUD { get; private set; }
     public GameObject _OptionsScreen { get; private set; }
     public GameObject _LoadScreen { get; private set; }
     public GameObject _SaveScreen { get; private set; }
@@ -33,6 +36,7 @@ public class GameManager : MonoBehaviour
     public ObjectPool _NPCPool { get; private set; }
 
     public bool _IsGameStopped { get; private set; }
+    public int _InGameMenuNumber { get; private set; }
 
     public int _LevelIndex { get; private set; }
 
@@ -41,6 +45,8 @@ public class GameManager : MonoBehaviour
     public LayerMask _TerrainAndSolidMask;
     public LayerMask _SolidAndHumanMask;
 
+    private List<string> _maleDnaNames;
+    private List<string> _femaleDnaNames;
 
     private Language _lastActiveLanguage;
 
@@ -56,10 +62,16 @@ public class GameManager : MonoBehaviour
 
     private void Awake()
     {
+        transform.Find("CharacterCreation").GetComponent<CharacterCreation>().Init();
         Shader.EnableKeyword("_USEGLOBALSNOWLEVEL");
         Shader.EnableKeyword("_PW_GLOBAL_COVER_LAYER");
         Shader.EnableKeyword("_PW_COVER_ENABLED");
         NPCManager._AllNPCs = new List<NPC>();
+
+        _maleDnaNames = UMAGlobalContext.Instance.GetRace("HumanMale").GetDNANames();
+        _femaleDnaNames = UMAGlobalContext.Instance.GetRace("HumanFemale").GetDNANames();
+
+        NPCManager._Comparer = new NPCDistanceComparer();
         _Instance = this;
         _ObjectsInChunk = new List<AssetReferenceGameObject>[_NumberOfColumnsForTerrains, _NumberOfRowsForTerrains];
         _ObjectPositionsInChunk = new List<Vector3>[_NumberOfColumnsForTerrains, _NumberOfRowsForTerrains];
@@ -67,17 +79,20 @@ public class GameManager : MonoBehaviour
         _Player = GameObject.FindGameObjectWithTag("Player");
 
         //Application.targetFrameRate = 60;
-        _OptionsScreen = GameObject.FindGameObjectWithTag("UI").transform.Find("Options").gameObject;
+        _OptionsScreen = GameObject.FindGameObjectWithTag("UI").transform.Find("UIMain").Find("Options").gameObject;
         _LoadingObject = GameObject.FindGameObjectWithTag("UI").transform.Find("Loading").gameObject;
-        _LoadScreen = GameObject.FindGameObjectWithTag("UI").transform.Find("Load").gameObject;
+        _LoadScreen = GameObject.FindGameObjectWithTag("UI").transform.Find("UIMain").Find("Load").gameObject;
 
         _LevelIndex = SceneManager.GetActiveScene().buildIndex;
         if (_LevelIndex != 0)
         {
-            _StopScreen = GameObject.FindGameObjectWithTag("UI").transform.Find("StopScreen").gameObject;
-            _InventoryScreen = GameObject.FindGameObjectWithTag("UI").transform.Find("InventoryScreen").gameObject;
-            _InGameScreen = GameObject.FindGameObjectWithTag("UI").transform.Find("InGameScreen").gameObject;
-            _SaveScreen = GameObject.FindGameObjectWithTag("UI").transform.Find("Save").gameObject;
+            _StopScreen = GameObject.FindGameObjectWithTag("UI").transform.Find("UIMain").Find("StopScreen").gameObject;
+            _InGameMenu = GameObject.FindGameObjectWithTag("UI").transform.Find("UIMain").Find("InGameMenu").gameObject;
+            _InventoryScreen = GameObject.FindGameObjectWithTag("UI").transform.Find("UIMain").Find("InGameMenu").Find("InventoryScreen").gameObject;
+            _MapScreen = GameObject.FindGameObjectWithTag("UI").transform.Find("UIMain").Find("InGameMenu").Find("MapScreen").gameObject;
+            _DialogueScreen = GameObject.FindGameObjectWithTag("UI").transform.Find("UIMain").Find("InGameMenu").Find("DialogueScreen").gameObject;
+            _GameHUD = GameObject.FindGameObjectWithTag("UI").transform.Find("UIMain").Find("InGameScreen").gameObject;
+            _SaveScreen = GameObject.FindGameObjectWithTag("UI").transform.Find("UIMain").Find("Save").gameObject;
 
             _NPCPool = transform.Find("NPC_Pool").GetComponent<ObjectPool>();
         }
@@ -89,14 +104,15 @@ public class GameManager : MonoBehaviour
             SaveSystemHandler._Instance.LoadGame(SaveSystemHandler._Instance._ActiveSave);
         else
             Time.timeScale = 1f;
+
     }
-    
+
     private void Update()
     {
         if (_LevelIndex != 0)
         {
             NPCManager.Update();
-            
+
             if (Gaia.ProceduralWorldsGlobalWeather.Instance.IsSnowing)
             {
                 _isSnowing = true;
@@ -135,7 +151,7 @@ public class GameManager : MonoBehaviour
         {
             if (_IsGameStopped)
             {
-                if (_InventoryScreen.activeInHierarchy)
+                if (_InGameMenu.activeInHierarchy)
                 {
                     UnstopGame();
                     CloseInGameMenuScreen();
@@ -147,6 +163,27 @@ public class GameManager : MonoBehaviour
                 OpenInGameMenuScreen();
             }
         }
+        if (_InGameMenu.activeInHierarchy)
+        {
+            if (M_Input.GetButtonDown("UIRight"))
+            {
+                _InGameMenuNumber++;
+                _InGameMenuNumber = _InGameMenuNumber % 3;
+                if (_InGameMenuNumber < 0)
+                    _InGameMenuNumber = 2;
+                CloseAllInGameMenus();
+                OpenInGameMenu(_InGameMenuNumber);
+            }
+            else if (M_Input.GetButtonDown("UILeft"))
+            {
+                _InGameMenuNumber--;
+                _InGameMenuNumber = _InGameMenuNumber % 3;
+                if (_InGameMenuNumber < 0)
+                    _InGameMenuNumber = 2;
+                CloseAllInGameMenus();
+                OpenInGameMenu(_InGameMenuNumber);
+            }
+        }
         if (M_Input.GetButtonDown("Esc"))
         {
             if (_LevelIndex != 0)
@@ -155,7 +192,12 @@ public class GameManager : MonoBehaviour
                 {
                     if (_LoadingObject.activeInHierarchy) return;
 
-                    if (_OptionsScreen.activeInHierarchy)
+                    if (_InGameMenu.activeInHierarchy)
+                    {
+                        CloseInGameMenuScreen();
+                        UnstopGame();
+                    }
+                    else if (_OptionsScreen.activeInHierarchy)
                         CloseOptionsScreen();
                     else if (_LoadScreen.activeInHierarchy)
                         CloseLoadScreen();
@@ -180,18 +222,7 @@ public class GameManager : MonoBehaviour
             }
         }
 
-        /*if (M_Input.GetButtonDown("Language"))
-        {
-            if (Localization._Instance._ActiveLanguage != Language.EN)
-            {
-                _lastActiveLanguage = Localization._Instance._ActiveLanguage;
-                Localization._Instance.SetLanguage(Language.EN);
-            }
-            else if (_lastActiveLanguage != Language.EN)
-            {
-                Localization._Instance.SetLanguage(_lastActiveLanguage);
-            }
-        }*/
+
     }
 
     #region CommonMethods
@@ -325,53 +356,18 @@ public class GameManager : MonoBehaviour
             UnstopGame();
         }
     }
-    public void ChangeSolidObjectShader(GameObject solidObj, bool isToTransparent)
-    {
-        var renderers = solidObj.GetComponentsInChildren<MeshRenderer>();
-        float smoothness;
-        Texture baseTexture, metallicTexture, normalTexture;
-        foreach (var renderer in renderers)
-        {
-            var mats = renderer.sharedMaterials;
-            for (int i = 0; i < mats.Length; i++)
-            {
-                if (!mats[i].name.StartsWith("PW_URP_Transparent") && !mats[i].name.StartsWith("PW_URP_Solid"))
-                {
-                    smoothness = mats[i].GetFloat("_Glossiness");
-                    baseTexture = mats[i].GetTexture("_MainTex");
-                    metallicTexture = mats[i].GetTexture("_MetallicGlossMap");
-                    normalTexture = mats[i].GetTexture("_BumpMap");
 
-                    mats[i] = isToTransparent ? PrefabHolder._Instance._Pw_URP_Transparent : PrefabHolder._Instance._Pw_URP_Solid;
-
-                    MaterialPropertyBlock block = new MaterialPropertyBlock();
-                    if (baseTexture != null)
-                        block.SetTexture("_MainTex", baseTexture);
-                    if (normalTexture != null)
-                        block.SetTexture("_BumpMap", normalTexture);
-                    if (metallicTexture != null)
-                        block.SetTexture("_MetallicGlossMap", metallicTexture);
-                    block.SetFloat("_Glossiness", smoothness);
-
-                    renderer.SetPropertyBlock(block, i);
-                }
-                else
-                {
-                    mats[i] = isToTransparent ? PrefabHolder._Instance._Pw_URP_Transparent : PrefabHolder._Instance._Pw_URP_Solid;
-                }
-            }
-            renderer.sharedMaterials = mats;
-        }
-    }
 
     public void LoadChunk(int x, int y)
     {
         AddressablesController._Instance.LoadTerrainObjects(x, y);
         //load chests
         AddressablesController._Instance.SpawnNpcs(x, y);
+        AddressablesController._Instance._IsChunkLoadedToScene[x, y] = true;
     }
     public void UnloadChunk(int x, int y)
     {
+        AddressablesController._Instance._IsChunkLoadedToScene[x, y] = false;
         AddressablesController._Instance.DespawnNpcs(x, y);
         //unload chests
         AddressablesController._Instance.UnloadTerrainObjects(x, y);
@@ -454,6 +450,48 @@ public class GameManager : MonoBehaviour
         _LoadingObject.SetActive(true);
         CallForAction(() => SceneManager.LoadSceneAsync(index), 0.1f, true);
     }
+
+    public void StartRain()
+    {
+        Gaia.ProceduralWorldsGlobalWeather.Instance.PlayRain();
+    }
+    public void StopRain()
+    {
+        Gaia.ProceduralWorldsGlobalWeather.Instance.StopRain();
+    }
+    public void StartSnow()
+    {
+        Gaia.ProceduralWorldsGlobalWeather.Instance.PlaySnow();
+    }
+    public void StopSnow()
+    {
+        Gaia.ProceduralWorldsGlobalWeather.Instance.StopSnow();
+    }
+    private void SetPlayerDataFromMenuCreation()
+    {
+        SaveSystemHandler._Instance._IsSettingPlayerDataForCreation = false;
+
+        WorldHandler._Instance._Player._IsMale = SaveSystemHandler._Instance._PlayerIsMaleForCreation;
+        WorldAndNpcArranger.SetGender(WorldHandler._Instance._Player._UmaDynamicAvatar, WorldHandler._Instance._Player._IsMale);
+
+        WorldHandler._Instance._Player._DnaData = SaveSystemHandler._Instance._PlayerDnaDataForCreation;
+
+        WorldHandler._Instance._Player._CharacterColors = new Dictionary<string, Color>();
+        var colors = SaveSystemHandler._Instance._PlayerCharacterColorsForCreation;
+        foreach (var color in colors)
+        {
+            if (WorldHandler._Instance._Player._CharacterColors.ContainsKey(color.Key))
+                WorldHandler._Instance._Player._CharacterColors[color.Key] = color.Value;
+            else
+                WorldHandler._Instance._Player._CharacterColors.Add(color.Key, color.Value);
+        }
+
+        List<UMATextRecipe> wardrobeRecipes = SaveSystemHandler._Instance._PlayerWardrobeDataForCreation;
+        for (int i = 0; i < wardrobeRecipes.Count; i++)
+        {
+            WorldHandler._Instance._Player.WearWardrobe(wardrobeRecipes[i], true);
+        }
+    }
     public void StartValuesForNewGame()
     {
         WorldHandler._Instance.InitSeasonForNewGame();
@@ -461,9 +499,17 @@ public class GameManager : MonoBehaviour
         Vector3 pos = _Player.transform.position;//change it with player start pos
         _Player.transform.position = pos;
 
-        WorldAndNpcCreation.SetGender(WorldHandler._Instance._Player._UmaDynamicAvatar, WorldHandler._Instance._Player._IsMale);
-        SetRandomDNA(WorldHandler._Instance._Player);
-        SetRandomWardrobe(WorldHandler._Instance._Player, WorldHandler._Instance._Player._IsMale);
+        if (SaveSystemHandler._Instance._IsSettingPlayerDataForCreation)
+        {
+            SetPlayerDataFromMenuCreation();
+        }
+        else
+        {
+            Debug.LogError("Player Character Not Set!");
+            WorldAndNpcArranger.SetGender(WorldHandler._Instance._Player._UmaDynamicAvatar, WorldHandler._Instance._Player._IsMale);
+            SetRandomDNA(WorldHandler._Instance._Player);
+            SetRandomWardrobe(WorldHandler._Instance._Player, WorldHandler._Instance._Player._IsMale);
+        }
 
         ushort numberOfNpcs = 20;
         NPC createdNpc;
@@ -491,43 +537,92 @@ public class GameManager : MonoBehaviour
     }
     private Vector3 GetSpawnPosition(NPC npc)
     {
-        Vector3 pos = _Player.transform.position + new Vector3(Random.Range(-1f, 1f), 0f, Random.Range(-1f, 1f)) * Random.Range(1f, 5f);
+        Vector3 pos = _Player.transform.position + new Vector3(Random.Range(-1f, 1f), 0f, Random.Range(-1f, 1f)) * Random.Range(1f, 5f);//////////////
         pos.y = GetTerrainOrWaterHeightOnPosition(pos);
         return pos;
     }
     private void SetRandomDNA(Humanoid human)
     {
-        List<string> dnaNames = _Player.GetComponent<Player>()._UmaDynamicAvatar.activeRace.data.GetDNANames();
+        List<string> dnaNames = human._IsMale ? _maleDnaNames : _femaleDnaNames;
         Dictionary<string, float> newDna = new Dictionary<string, float>();
         float effectsAll = Random.Range(-0.06f, 0.06f);
         float value;
-        SetRandomSkinColors(_Player.GetComponent<Player>()._UmaDynamicAvatar);
+        SetRandomColors(human, human._UmaDynamicAvatar);
         foreach (var dnaName in dnaNames)
         {
-            value = Random.Range(0.46f, 0.54f) + effectsAll;
+            value = Random.Range(0.42f, 0.58f) + effectsAll;
             if (dnaName == "headSize" || dnaName == "armLength" || dnaName == "feetSize" || dnaName == "forearmLength" || dnaName == "handsSize" || dnaName == "legsSize")
                 value = 0.5f;
             else if (dnaName == "height")
-                value -= 0.05f;
+                value = 0.5f + effectsAll;
             newDna.Add(dnaName, value);
         }
         human._DnaData = newDna;
     }
-    private void SetRandomSkinColors(DynamicCharacterAvatar avatar)
+    private void SetRandomColors(Humanoid human, DynamicCharacterAvatar avatar)
     {
+        if (human._CharacterColors == null)
+            human._CharacterColors = new Dictionary<string, Color>();
+
         float skinValue = Random.Range(0f, 2f);
         if (skinValue > 1f) skinValue /= 2f;
-        WorldAndNpcCreation.ChangeColor(avatar, "Skin", new Color(skinValue, skinValue, skinValue, 1f));
+        Color color = new Color(skinValue, skinValue, skinValue, 1f);
+
+        if (human._CharacterColors.ContainsKey("Skin"))
+            human._CharacterColors["Skin"] = color;
+        else
+            human._CharacterColors.Add("Skin", color);
+
+        if (avatar != null)
+            WorldAndNpcArranger.ChangeColor(avatar, "Skin", color);
+
+        float redValue = Random.Range(0.1f, 0.6f);
+        float greenValue = Random.Range(0.1f, 0.6f);
+        float blueValue = Random.Range(0.1f, 0.6f);
+        if (redValue > 0.3f) redValue /= 2f;
+        if (greenValue > 0.3f) greenValue /= 2f;
+        if (blueValue > 0.3f) blueValue /= 2f;
+        color = new Color(redValue, greenValue, blueValue, 1f);
+
+        if (human._CharacterColors.ContainsKey("Hair"))
+            human._CharacterColors["Hair"] = color;
+        else
+            human._CharacterColors.Add("Hair", color);
+
+        if (avatar != null)
+            WorldAndNpcArranger.ChangeColor(avatar, "Hair", color);
+
+        redValue = Random.Range(0.25f, 0.6f);
+        greenValue = Random.Range(0.25f, 0.6f);
+        blueValue = Random.Range(0.25f, 0.6f);
+        if (redValue > 0.3f) redValue /= 2f;
+        if (greenValue > 0.3f) greenValue /= 2f;
+        if (blueValue > 0.3f) blueValue /= 2f;
+        color = new Color(redValue, greenValue, blueValue, 1f);
+
+        if (human._CharacterColors.ContainsKey("Eyes"))
+            human._CharacterColors["Eyes"] = color;
+        else
+            human._CharacterColors.Add("Eyes", color);
+
+        if (avatar != null)
+            WorldAndNpcArranger.ChangeColor(avatar, "Eyes", color);
+
+        if (avatar != null && avatar.BuildCharacterEnabled)
+        {
+            avatar.BuildCharacterEnabled = false;
+            avatar.BuildCharacterEnabled = true;
+        }
     }
     private void SetRandomWardrobe(Humanoid human, bool isMale)
     {
         human._WardrobeData = new List<UMATextRecipe>();
-        var list = WorldAndNpcCreation.GetRandomHair(isMale);
+        var list = WorldAndNpcArranger.GetRandomHair(isMale);
         foreach (UMATextRecipe recipe in list)
         {
             human.WearWardrobe(recipe);
         }
-        list = WorldAndNpcCreation.GetRandomCloth(isMale);
+        list = WorldAndNpcArranger.GetRandomCloth(isMale);
         foreach (UMATextRecipe recipe in list)
         {
             human.WearWardrobe(recipe);
@@ -564,6 +659,10 @@ public class GameManager : MonoBehaviour
     {
         LoadSceneAsync(0);
     }
+    public void NewGame()
+    {
+        OpenCharacterCreation();
+    }
     public void QuitGame()
     {
         Application.Quit();
@@ -576,25 +675,70 @@ public class GameManager : MonoBehaviour
 
     public void OpenDeleteSaveScreen(int index)
     {
-        GameObject.FindGameObjectWithTag("UI").transform.Find("Load").Find("DeleteSaveScreen").gameObject.SetActive(true);
+        GameObject.FindGameObjectWithTag("UI").transform.Find("UIMain").Find("Load").Find("DeleteSaveScreen").gameObject.SetActive(true);
         _lastDeleteSaveIndex = index;
     }
     public void CloseDeleteSaveScreen()
     {
-        GameObject.FindGameObjectWithTag("UI").transform.Find("Load").Find("DeleteSaveScreen").gameObject.SetActive(false);
+        GameObject.FindGameObjectWithTag("UI").transform.Find("UIMain").Find("Load").Find("DeleteSaveScreen").gameObject.SetActive(false);
     }
 
-    public void StopGame(bool isOpeningInventory, bool isPausing)
+    public void OpenCharacterCreation()
     {
-        if (isOpeningInventory)
+        CharacterCreation._Instance.gameObject.SetActive(true);
+
+        if (_LevelIndex != 0)
+            StopGame(false, false);
+    }
+    public void CharacterCreationFinished()
+    {
+        CharacterCreation._Instance.transform.Find("Canvas").Find("Loading").gameObject.SetActive(true);
+        CharacterCreationDataToPlayer();
+        if (_LevelIndex == 0)
+            LoadSceneAsync(1);
+        else
+            RestartGameWithNewCharacter();
+
+    }
+    private void CharacterCreationDataToPlayer()
+    {
+        SaveSystemHandler._Instance._IsSettingPlayerDataForCreation = true;
+
+        SaveSystemHandler._Instance._PlayerIsMaleForCreation = CharacterCreation._Instance.transform.Find("CharacterPreview").GetComponent<DynamicCharacterAvatar>().activeRace.name == "HumanMale";
+
+        SaveSystemHandler._Instance._PlayerDnaDataForCreation = CharacterCreation._Instance.transform.Find("CharacterPreview").GetComponent<DynamicCharacterAvatar>().GetDNAValues();
+
+        SaveSystemHandler._Instance._PlayerCharacterColorsForCreation = new Dictionary<string, Color>();
+        var colors = CharacterCreation._Instance.transform.Find("CharacterPreview").GetComponent<DynamicCharacterAvatar>().characterColors.Colors;
+        for (int i = 0; i < colors.Count; i++)
         {
-            _InventoryScreen.SetActive(true);
-            _InGameScreen.SetActive(false);
+            SaveSystemHandler._Instance._PlayerCharacterColorsForCreation.Add(colors[i].Name, colors[i].Color);
+        }
+
+        SaveSystemHandler._Instance._PlayerWardrobeDataForCreation = new List<UMATextRecipe>();
+        UMATextRecipe[] wardrobeRecipes = CharacterCreation._Instance.transform.Find("CharacterPreview").GetComponent<DynamicCharacterAvatar>().GetVisibleWearables();
+        for (int i = 0; i < wardrobeRecipes.Length; i++)
+        {
+            SaveSystemHandler._Instance._PlayerWardrobeDataForCreation.Add(wardrobeRecipes[i]);
+        }
+    }
+    private void RestartGameWithNewCharacter()
+    {
+        SaveSystemHandler._Instance._ActiveSave = -1;
+        UnstopGame();
+        RestartLevel();
+    }
+    public void StopGame(bool isOpeningInGameMenu, bool isPausing)
+    {
+        if (isOpeningInGameMenu)
+        {
+            _InGameMenu.SetActive(true);
+            _GameHUD.SetActive(false);
         }
         else if (!isPausing)
         {
             _StopScreen.SetActive(true);
-            _InGameScreen.SetActive(false);
+            _GameHUD.SetActive(false);
         }
         Time.timeScale = 0f;
         _IsGameStopped = true;
@@ -604,8 +748,8 @@ public class GameManager : MonoBehaviour
     public void UnstopGame()
     {
         _StopScreen.SetActive(false);
-        _InventoryScreen.SetActive(false);
-        _InGameScreen.SetActive(true);
+        _InGameMenu.SetActive(false);
+        _GameHUD.SetActive(true);
         CloseOptionsScreen(false);
         _IsGameStopped = false;
         Time.timeScale = 1f;
@@ -619,58 +763,79 @@ public class GameManager : MonoBehaviour
 
     public void OpenInGameMenuScreen()
     {
-
+        _InGameMenu.SetActive(true);
     }
     public void CloseInGameMenuScreen()
     {
-
+        _InGameMenu.SetActive(false);
+    }
+    private void OpenInGameMenu(int number)
+    {
+        if (number == 0)
+        {
+            _InventoryScreen.SetActive(true);
+        }
+        else if (number == 1)
+        {
+            _MapScreen.SetActive(true);
+        }
+        else if (number == 2)
+        {
+            _DialogueScreen.SetActive(true);
+        }
+    }
+    private void CloseAllInGameMenus()
+    {
+        _InventoryScreen.SetActive(false);
+        _MapScreen.SetActive(false);
+        _DialogueScreen.SetActive(false);
     }
     public void OpenOptionsScreen()
     {
         if (GameManager._Instance._LevelIndex == 0)
         {
-            GameObject.FindGameObjectWithTag("UI").transform.Find("Options").gameObject.SetActive(true);
-            GameObject.FindGameObjectWithTag("UI").transform.Find("MainMenu").gameObject.SetActive(false);
+            GameObject.FindGameObjectWithTag("UI").transform.Find("UIMain").Find("Options").gameObject.SetActive(true);
+            GameObject.FindGameObjectWithTag("UI").transform.Find("UIMain").Find("MainMenu").gameObject.SetActive(false);
         }
         else
         {
-            GameObject.FindGameObjectWithTag("UI").transform.Find("Options").gameObject.SetActive(true);
-            GameObject.FindGameObjectWithTag("UI").transform.Find("StopScreen").gameObject.SetActive(false);
+            GameObject.FindGameObjectWithTag("UI").transform.Find("UIMain").Find("Options").gameObject.SetActive(true);
+            GameObject.FindGameObjectWithTag("UI").transform.Find("UIMain").Find("StopScreen").gameObject.SetActive(false);
         }
     }
     public void CloseOptionsScreen(bool isOpeningMenu = true)
     {
         if (GameManager._Instance._LevelIndex == 0)
         {
-            GameObject.FindGameObjectWithTag("UI").transform.Find("Options").gameObject.SetActive(false);
+            GameObject.FindGameObjectWithTag("UI").transform.Find("UIMain").Find("Options").gameObject.SetActive(false);
             if (isOpeningMenu)
-                GameObject.FindGameObjectWithTag("UI").transform.Find("MainMenu").gameObject.SetActive(true);
+                GameObject.FindGameObjectWithTag("UI").transform.Find("UIMain").Find("MainMenu").gameObject.SetActive(true);
         }
         else
         {
-            GameObject.FindGameObjectWithTag("UI").transform.Find("Options").gameObject.SetActive(false);
+            GameObject.FindGameObjectWithTag("UI").transform.Find("UIMain").Find("Options").gameObject.SetActive(false);
             if (isOpeningMenu)
-                GameObject.FindGameObjectWithTag("UI").transform.Find("StopScreen").gameObject.SetActive(true);
+                GameObject.FindGameObjectWithTag("UI").transform.Find("UIMain").Find("StopScreen").gameObject.SetActive(true);
         }
     }
     public void OpenLoadScreen()
     {
         if (GameManager._Instance._LevelIndex == 0)
         {
-            GameObject.FindGameObjectWithTag("UI").transform.Find("Load").gameObject.SetActive(true);
-            GameObject.FindGameObjectWithTag("UI").transform.Find("MainMenu").gameObject.SetActive(false);
+            GameObject.FindGameObjectWithTag("UI").transform.Find("UIMain").Find("Load").gameObject.SetActive(true);
+            GameObject.FindGameObjectWithTag("UI").transform.Find("UIMain").Find("MainMenu").gameObject.SetActive(false);
         }
         else
         {
-            GameObject.FindGameObjectWithTag("UI").transform.Find("Load").gameObject.SetActive(true);
-            GameObject.FindGameObjectWithTag("UI").transform.Find("StopScreen").gameObject.SetActive(false);
+            GameObject.FindGameObjectWithTag("UI").transform.Find("UIMain").Find("Load").gameObject.SetActive(true);
+            GameObject.FindGameObjectWithTag("UI").transform.Find("UIMain").Find("StopScreen").gameObject.SetActive(false);
         }
 
         GameObject created = null;
         for (int i = 0; i < Options._Instance._LoadedGamesCount; i++)
         {
             int c = i;
-            created = Instantiate(PrefabHolder._Instance._LoadPrefab, GameObject.FindGameObjectWithTag("UI").transform.Find("Load").Find("Saves"));
+            created = Instantiate(PrefabHolder._Instance._LoadPrefab, GameObject.FindGameObjectWithTag("UI").transform.Find("UIMain").Find("Load").Find("Saves"));
             created.GetComponent<Button>().onClick.AddListener(() => PlayButtonSound());
             created.GetComponent<Button>().onClick.AddListener(() => { SaveSystemHandler._Instance._ActiveSave = c; LoadScene(1); });
             created.transform.Find("DeleteButton").GetComponent<Button>().onClick.AddListener(() => PlayButtonSound());
@@ -679,62 +844,79 @@ public class GameManager : MonoBehaviour
     }
     public void CloseLoadScreen()
     {
-        for (int i = 0; i < GameObject.FindGameObjectWithTag("UI").transform.Find("Load").Find("Saves").transform.childCount; i++)
+        for (int i = 0; i < GameObject.FindGameObjectWithTag("UI").transform.Find("UIMain").Find("Load").Find("Saves").transform.childCount; i++)
         {
-            Destroy(GameObject.FindGameObjectWithTag("UI").transform.Find("Load").Find("Saves").transform.GetChild(i).gameObject);
+            Destroy(GameObject.FindGameObjectWithTag("UI").transform.Find("UIMain").Find("Load").Find("Saves").transform.GetChild(i).gameObject);
         }
 
         if (GameManager._Instance._LevelIndex == 0)
         {
-            GameObject.FindGameObjectWithTag("UI").transform.Find("MainMenu").gameObject.SetActive(true);
+            GameObject.FindGameObjectWithTag("UI").transform.Find("UIMain").Find("MainMenu").gameObject.SetActive(true);
         }
         else
         {
-            GameObject.FindGameObjectWithTag("UI").transform.Find("StopScreen").gameObject.SetActive(true);
+            GameObject.FindGameObjectWithTag("UI").transform.Find("UIMain").Find("StopScreen").gameObject.SetActive(true);
         }
 
-        GameObject.FindGameObjectWithTag("UI").transform.Find("Load").gameObject.SetActive(false);
-        GameObject.FindGameObjectWithTag("UI").transform.Find("Load").Find("DeleteSaveScreen").gameObject.SetActive(false);
+        GameObject.FindGameObjectWithTag("UI").transform.Find("UIMain").Find("Load").gameObject.SetActive(false);
+        GameObject.FindGameObjectWithTag("UI").transform.Find("UIMain").Find("Load").Find("DeleteSaveScreen").gameObject.SetActive(false);
 
     }
     public void OpenSaveScreen()
     {
         if (GameManager._Instance._LevelIndex == 0)
         {
-            GameObject.FindGameObjectWithTag("UI").transform.Find("Save").gameObject.SetActive(true);
-            GameObject.FindGameObjectWithTag("UI").transform.Find("MainMenu").gameObject.SetActive(false);
+            GameObject.FindGameObjectWithTag("UI").transform.Find("UIMain").Find("Save").gameObject.SetActive(true);
+            GameObject.FindGameObjectWithTag("UI").transform.Find("UIMain").Find("MainMenu").gameObject.SetActive(false);
         }
         else
         {
-            GameObject.FindGameObjectWithTag("UI").transform.Find("Save").gameObject.SetActive(true);
-            GameObject.FindGameObjectWithTag("UI").transform.Find("StopScreen").gameObject.SetActive(false);
+            GameObject.FindGameObjectWithTag("UI").transform.Find("UIMain").Find("Save").gameObject.SetActive(true);
+            GameObject.FindGameObjectWithTag("UI").transform.Find("UIMain").Find("StopScreen").gameObject.SetActive(false);
         }
 
         GameObject created = null;
         for (int i = 0; i < Options._Instance._LoadedGamesCount + 1; i++)
         {
             int c = i;
-            created = Instantiate(PrefabHolder._Instance._SavePrefab, GameObject.FindGameObjectWithTag("UI").transform.Find("Save").Find("Saves"));
+            created = Instantiate(PrefabHolder._Instance._SavePrefab, GameObject.FindGameObjectWithTag("UI").transform.Find("UIMain").Find("Save").Find("Saves"));
             created.GetComponent<Button>().onClick.AddListener(() => PlayButtonSound());
             created.GetComponent<Button>().onClick.AddListener(() => SaveGame(c));
         }
     }
     public void CloseSaveScreen()
     {
-        for (int i = 0; i < GameObject.FindGameObjectWithTag("UI").transform.Find("Save").Find("Saves").transform.childCount; i++)
+        for (int i = 0; i < GameObject.FindGameObjectWithTag("UI").transform.Find("UIMain").Find("Save").Find("Saves").transform.childCount; i++)
         {
-            Destroy(GameObject.FindGameObjectWithTag("UI").transform.Find("Save").Find("Saves").transform.GetChild(i).gameObject);
+            Destroy(GameObject.FindGameObjectWithTag("UI").transform.Find("UIMain").Find("Save").Find("Saves").transform.GetChild(i).gameObject);
         }
 
         if (GameManager._Instance._LevelIndex == 0)
         {
-            GameObject.FindGameObjectWithTag("UI").transform.Find("Save").gameObject.SetActive(false);
-            GameObject.FindGameObjectWithTag("UI").transform.Find("MainMenu").gameObject.SetActive(true);
+            GameObject.FindGameObjectWithTag("UI").transform.Find("UIMain").Find("Save").gameObject.SetActive(false);
+            GameObject.FindGameObjectWithTag("UI").transform.Find("UIMain").Find("MainMenu").gameObject.SetActive(true);
         }
         else
         {
-            GameObject.FindGameObjectWithTag("UI").transform.Find("Save").gameObject.SetActive(false);
-            GameObject.FindGameObjectWithTag("UI").transform.Find("StopScreen").gameObject.SetActive(true);
+            GameObject.FindGameObjectWithTag("UI").transform.Find("UIMain").Find("Save").gameObject.SetActive(false);
+            GameObject.FindGameObjectWithTag("UI").transform.Find("UIMain").Find("StopScreen").gameObject.SetActive(true);
+        }
+    }
+    public void UpdateInventoryUI(Inventory anotherInventory = null)
+    {
+
+    }
+    private Color GetDurabilityColor(float normalizedDurability)
+    {
+        if (normalizedDurability < 0.5f)
+        {
+            float t = normalizedDurability / 0.5f;
+            return Color.Lerp(Color.red, Color.yellow, t);
+        }
+        else
+        {
+            float t = (normalizedDurability - 0.5f) / 0.5f;
+            return Color.Lerp(Color.yellow, Color.green, t);
         }
     }
     public void Slowtime(float time)

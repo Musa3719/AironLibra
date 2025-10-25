@@ -49,7 +49,6 @@ public class AddressablesController : MonoBehaviour
         if (!_IsChunkLoadedToScene[x, y]) return;
         if (_HandlesForSpawned[x, y] == null) return;
 
-        _IsChunkLoadedToScene[x, y] = false;
         for (int i = 0; i < _HandlesForSpawned[x, y].Count; i++)
         {
             var handle = _HandlesForSpawned[x, y][i];
@@ -82,7 +81,6 @@ public class AddressablesController : MonoBehaviour
     {
         if (_IsChunkLoadedToScene[x, y]) return;
 
-        _IsChunkLoadedToScene[x, y] = true;
         SetAdressablesForSpawn(x, y);
         for (int i = 0; i < _objectsWillBeSpawned.Count; i++)
         {
