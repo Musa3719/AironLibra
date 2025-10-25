@@ -10,6 +10,20 @@ public class WorldHandler : MonoBehaviour
     public Calendar _Date { get; private set; }
     public Clock _Clock { get; private set; }
 
+    public enum WeatherType : byte
+    {
+        None, Rainy, Snowy
+    }
+    public WeatherType _WeatherType { get; private set; }
+    public int _WeatherLimitFromNorth { get; private set; }
+    public int _NoneWeatherStartTimeForDay { get; set; }
+    public int _RainStartTimeForDay { get; set; }
+    public int _SnowStartTimeForDay { get; set; }
+    private float _rainAmount;
+    private float _snowAmount;
+    private float _checkWeatherForCurrentWorldPositionCounter;
+    private float _lastTimeRainVFXChanged;
+
     public List<Group> _Factions { get; private set; }
     public Group _PlayerFaction { get; private set; }
 
@@ -34,13 +48,16 @@ public class WorldHandler : MonoBehaviour
         _Date._Year = 15;
         _Clock = new Clock();
     }
+    
     private void Update()
     {
         if (GameManager._Instance._IsGameStopped) return;
 
         _Clock.Update();
+        CheckWeatherForCurrentWorldPosition();
         //Debug.Log(Gaia.ProceduralWorldsGlobalWeather.Instance.Season + " : " + _DaysInSeason + " : " + _DaysInYear);
     }
+   
     public void InitSeasonForNewGame()
     {
         Shader.SetGlobalFloat("_Global_SnowLevel", 0f);
@@ -56,7 +73,149 @@ public class WorldHandler : MonoBehaviour
         Gaia.ProceduralWorldsGlobalWeather.Instance.Season = Gaia.ProceduralWorldsGlobalWeather.Instance.Season % 4f;
         _Date.ToNextDay();
         //world stuff
+
+        ArrangeWeatherForNewDay();
     }
+    private void CheckWeatherForCurrentWorldPosition()
+    {
+        if (_WeatherType == WeatherType.None) return;
+
+        _checkWeatherForCurrentWorldPositionCounter += Time.deltaTime;
+        if (_checkWeatherForCurrentWorldPositionCounter < 1f) return;
+        _checkWeatherForCurrentWorldPositionCounter = 0f;
+
+        if (_lastTimeRainVFXChanged + 3f < Time.time)
+        {
+            if (GameManager._Instance.GetChunkFromPosition(_Player.transform.position).y < _WeatherLimitFromNorth)
+            {
+                if (Gaia.ProceduralWorldsGlobalWeather.Instance.IsRaining)
+                {
+                    _lastTimeRainVFXChanged = Time.time;
+                    Gaia.ProceduralWorldsGlobalWeather.Instance.StopRain();
+                }
+                else if (Gaia.ProceduralWorldsGlobalWeather.Instance.IsSnowing)
+                {
+                    _lastTimeRainVFXChanged = Time.time;
+                    Gaia.ProceduralWorldsGlobalWeather.Instance.StopSnow();
+                }
+            }
+            else
+            {
+                if (_WeatherType==WeatherType.Rainy && !Gaia.ProceduralWorldsGlobalWeather.Instance.IsRaining)
+                {
+                    _lastTimeRainVFXChanged = Time.time;
+                    Gaia.ProceduralWorldsGlobalWeather.Instance.PlayRain();
+                }
+                else if (_WeatherType == WeatherType.Snowy && !Gaia.ProceduralWorldsGlobalWeather.Instance.IsSnowing)
+                {
+                    _lastTimeRainVFXChanged = Time.time;
+                    Gaia.ProceduralWorldsGlobalWeather.Instance.PlaySnow();
+                }
+            }
+        }
+    }
+    private void ArrangeWeatherForNewDay()
+    {
+        switch (_WeatherType)
+        {
+            case WeatherType.None:
+                _rainAmount += GetRainIncrease();
+                _rainAmount = Mathf.Clamp(_rainAmount, 0f, 100f);
+                _snowAmount += GetSnowIncrease();
+                _snowAmount = Mathf.Clamp(_snowAmount, 0f, 100f);
+                break;
+            case WeatherType.Rainy:
+                _rainAmount -= Random.Range(0f, 50f);
+                _rainAmount = Mathf.Clamp(_rainAmount, 0f, 100f);
+                break;
+            case WeatherType.Snowy:
+                _snowAmount -= Random.Range(0f, 50f);
+                _snowAmount = Mathf.Clamp(_snowAmount, 0f, 100f);
+                break;
+            default:
+                Debug.Log("Weather Type Not Found!");
+                break;
+        }
+
+        if (_WeatherType == WeatherType.Rainy)
+        {
+            if (!GameManager._Instance.RandomPercentageChance(_rainAmount))
+            {
+                _NoneWeatherStartTimeForDay = Random.Range(1, 24);
+            }
+        }
+        else if (_WeatherType == WeatherType.Snowy)
+        {
+            if (!GameManager._Instance.RandomPercentageChance(_snowAmount))
+            {
+                _NoneWeatherStartTimeForDay = Random.Range(1, 24);
+            }
+        }
+        else if (_WeatherType == WeatherType.None)
+        {
+            if (_WeatherType == WeatherType.None)
+            {
+                if (GameManager._Instance.RandomPercentageChance(_rainAmount))
+                {
+                    _RainStartTimeForDay = Random.Range(1, 24);
+                }
+            }
+            if (_WeatherType == WeatherType.None)
+            {
+                if (GameManager._Instance.RandomPercentageChance(_rainAmount))
+                {
+                    _SnowStartTimeForDay = Random.Range(1, 24);
+                }
+            }
+        }
+
+
+    }
+    private float GetRainIncrease()
+    {
+        if (Gaia.ProceduralWorldsGlobalWeather.Instance.Season < 1f) { return Random.Range(-2f, 7f); }
+        else if (Gaia.ProceduralWorldsGlobalWeather.Instance.Season < 2f) { return Random.Range(-2f, 5f); }
+        else if (Gaia.ProceduralWorldsGlobalWeather.Instance.Season < 3f) { return Random.Range(-2.5f, 4.5f); }
+        else if (Gaia.ProceduralWorldsGlobalWeather.Instance.Season < 4f) { return Random.Range(2f, 10f); }
+        return Random.Range(2f, 10f);
+    }
+    private float GetSnowIncrease()
+    {
+        if (Gaia.ProceduralWorldsGlobalWeather.Instance.Season < 1f) { return Random.Range(-2f, 12f); }
+        else if (Gaia.ProceduralWorldsGlobalWeather.Instance.Season < 2f) { return Random.Range(-3f, 4.5f); }
+        else if (Gaia.ProceduralWorldsGlobalWeather.Instance.Season < 3f) { return Random.Range(-5f, 2f); }
+        else if (Gaia.ProceduralWorldsGlobalWeather.Instance.Season < 4f) { return Random.Range(-1f, 6f); }
+        return Random.Range(-1f, 6f);
+    }
+    public void ChangeWeather(WeatherType newWeather)
+    {
+        _WeatherType = newWeather;
+        switch (newWeather)
+        {
+            case WeatherType.None:
+                _WeatherLimitFromNorth = 0;
+                if (Gaia.ProceduralWorldsGlobalWeather.Instance.IsRaining)
+                    Gaia.ProceduralWorldsGlobalWeather.Instance.StopRain();
+                else if (Gaia.ProceduralWorldsGlobalWeather.Instance.IsSnowing)
+                    Gaia.ProceduralWorldsGlobalWeather.Instance.StopSnow();
+                _lastTimeRainVFXChanged = Time.time;
+                break;
+            case WeatherType.Rainy:
+                _WeatherLimitFromNorth = Random.Range(5, 10);
+                Gaia.ProceduralWorldsGlobalWeather.Instance.PlayRain();
+                _lastTimeRainVFXChanged = Time.time;
+                break;
+            case WeatherType.Snowy:
+                _WeatherLimitFromNorth = Random.Range(3, 8);
+                Gaia.ProceduralWorldsGlobalWeather.Instance.PlaySnow();
+                _lastTimeRainVFXChanged = Time.time;
+                break;
+            default:
+                break;
+        }
+
+    }
+
     public void NextYear()
     {
         _Date._Year++;
@@ -119,6 +278,22 @@ public class Clock
     {
         _Hour = Gaia.GaiaAPI.GetTimeOfDayHour();
         _Minute = Gaia.GaiaAPI.GetTimeOfDayMinute();
+
+        if (_Hour == WorldHandler._Instance._NoneWeatherStartTimeForDay)
+        {
+            WorldHandler._Instance.ChangeWeather(WorldHandler.WeatherType.None);
+            WorldHandler._Instance._NoneWeatherStartTimeForDay = -1;
+        }
+        else if (_Hour == WorldHandler._Instance._RainStartTimeForDay)
+        {
+            WorldHandler._Instance.ChangeWeather(WorldHandler.WeatherType.Rainy);
+            WorldHandler._Instance._RainStartTimeForDay = -1;
+        }
+        else if (_Hour == WorldHandler._Instance._SnowStartTimeForDay)
+        {
+            WorldHandler._Instance.ChangeWeather(WorldHandler.WeatherType.Snowy);
+            WorldHandler._Instance._SnowStartTimeForDay = -1;
+        }
 
         CheckForNextDay();
     }

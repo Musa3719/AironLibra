@@ -4,12 +4,8 @@ using UnityEngine;
 
 public class Projectile : MonoBehaviour, ICanDamage
 {
-    public Damage Damage;
-    public Damage CalculateDamage()
-    {
-        return Damage;
-    }
-
+    public Damage _Damage { get { return _damage; } set { _damage = value; } }
+    private Damage _damage;
     private Rigidbody _rb;
 
     private void Awake()
@@ -20,7 +16,7 @@ public class Projectile : MonoBehaviour, ICanDamage
     {
         _rb.linearVelocity = dir * speed;
         transform.rotation = Quaternion.LookRotation(dir, Vector3.up);
-        Damage = damage;
+        _Damage = damage;
     }
 
     private void OnTriggerEnter(Collider other)
@@ -29,7 +25,7 @@ public class Projectile : MonoBehaviour, ICanDamage
 
         ICanGetHurt hurtable = GetHurtable(other);
         if (hurtable != null)
-            hurtable.TakeDamage(Damage);
+            _Damage.Inflict(hurtable);
 
         Destroy(gameObject);
     }
@@ -45,12 +41,13 @@ public class Projectile : MonoBehaviour, ICanDamage
         if (!IsHitBox(other)) return null;
 
         Transform parent = other.transform;
+        ICanGetHurt component;
         while (parent.parent != null)
         {
             parent = parent.parent;
-            if (parent.GetComponent<ICanGetHurt>() != null)
+            if (parent.gameObject.TryGetComponent(out component))
             {
-                return parent.GetComponent<ICanGetHurt>();
+                return component;
             }
         }
         return null;

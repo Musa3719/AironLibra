@@ -27,20 +27,23 @@ public class Player : Humanoid
 
     protected override void Awake()
     {
+        //_IsMale = true;/////////
         _Rigidbody = GetComponent<Rigidbody>();
         _MainCollider = transform.Find("char").Find("Root").Find("Global").Find("Position").Find("Hips").Find("MainCollider").GetComponent<CapsuleCollider>();
         base.Awake();
         _PlayerInputController = new PlayerInputController(this);
     }
+
     protected override void Start()
     {
         base.Start();
+        WorldHandler._Instance._Player.GetComponent<Humanoid>().DisableHumanData();
+        WorldHandler._Instance._Player.GetComponent<Humanoid>().EnableHumanData();
     }
     protected override void Update()
     {
         if (GameManager._Instance._IsGameStopped) return;
-
-        base.Update();
+            base.Update();
         _PlayerInputController.ArrangeInput(_LocomotionSystem);
     }
 

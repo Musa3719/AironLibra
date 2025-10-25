@@ -66,4 +66,18 @@ public static class HandStateMethods
     {
 
     }
+
+    public static bool CheckForEmptyState(Humanoid human)
+    {
+        return !human._IsInCombatMode && human._HandEquippedItemRef == null;
+    }
+    public static bool CheckForCarryState(Humanoid human)
+    {
+        return human._HandEquippedItemRef != null && human._HandEquippedItemRef._IsBig && !(human._HandEquippedItemRef is WeaponItem);
+    }
+
+    public static bool CheckForWeaponState(Humanoid human)
+    {
+        return human._IsInCombatMode && human._HandEquippedItemRef != null && human._HandEquippedItemRef is WeaponItem;
+    }
 }

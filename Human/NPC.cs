@@ -7,14 +7,15 @@ public class NPC : Humanoid
 {
     public ushort _NpcIndex;
     public override Vector2 _DirectionInput => _directionCurrent;
+    public GameObject _TargetPoolNPC { get; private set; }
     public Vector3 _LastCornerFromPath { get; private set; }
     private Vector2 _directionCurrent;
     private Vector2 _directionInputFromPath;
     private List<Vector3> _cornersFromPath;
+    private NavMeshPath _CurrentPath { get { if (_currentPath == null) _currentPath = new NavMeshPath(); return _currentPath; } }
     private NavMeshPath _currentPath;
     private bool _isPathEnded;
     private float _segmentationMagnitude = 100f;
-    private Coroutine _segmentatePathCoroutine;
     private float _stuckOnPathTimer;
     private float _stuckArrangingTimer;
     private Vector3 _stuckArrangingPosition;
@@ -35,6 +36,10 @@ public class NPC : Humanoid
 
     protected override void Awake()
     {
+        _tryToCreatePathTimer = Random.Range(0f, _tryToCreatePathThreshold);
+        _nextPositionCheckCounter = Random.Range(0f, _nextPositionCheckThreshold);
+
+        _isPathEnded = true;
         _Rigidbody = GetComponent<Rigidbody>();
         NPCManager.AddToList(this);
         if (transform.childCount == 0) return;
@@ -51,6 +56,16 @@ public class NPC : Humanoid
     {
         if (_Rigidbody.isKinematic) return;
 
+        if (_ExpressionPlayer != null)
+        {
+            _ExpressionPlayer.enabled = Options._Instance._IsExpressionPlayerEnabled;
+            _ExpressionPlayer.GetComponent<UMA.TwistBones>().enabled = Options._Instance._IsExpressionPlayerEnabled;
+        }
+        if (_FootIKComponent != null)
+            _FootIKComponent.enabled = Options._Instance._IsFootIKEnabled;
+        if (_LeaninganimatorComponent != null)
+            _LeaninganimatorComponent.enabled = Options._Instance._IsLeaningEnabled;
+
         Stop();
         base.Start();
     }
@@ -63,21 +78,23 @@ public class NPC : Humanoid
     {
         if (GameManager._Instance._IsGameStopped) return;
 
-        if (_UmaDynamicAvatar != null && _UmaDynamicAvatar.BuildCharacterEnabled)
+        if (_UmaDynamicAvatar != null)
         {
             //disable inputs
             _JumpInput = false;
             _CrouchInput = false;
             _InteractInput = false;
 
+            ArrangePath();
             ArrangeDirection();
             ArrangeStuck();
             CheckNextPosition();
         }
 
         base.Update();
-
         //testing
+        //ArrangeNewMovementTarget(WorldHandler._Instance._Player.transform.position);
+
         if (M_Input.GetKeyDown(KeyCode.Alpha1))
             ChangeMuscleAmount(false);
         if (M_Input.GetKeyDown(KeyCode.Alpha2))
@@ -87,7 +104,8 @@ public class NPC : Humanoid
         if (M_Input.GetKeyDown(KeyCode.Alpha4))
             ChangeWeightAmount(true);
         if (M_Input.GetKeyDown(KeyCode.F))
-            WorldAndNpcCreation.SetGender(_UmaDynamicAvatar, Random.Range(0, 2) == 0);
+            _IsMale = true;
+        //WorldAndNpcCreation.SetGender(_UmaDynamicAvatar, Random.Range(0, 2) == 0);
         //WorldAndNpcCreation.ChangeColor(_UmaDynamicAvatar, "Skin", Color.red);
         if (M_Input.GetKeyDown(KeyCode.E))
             DestroyNPCChild();
@@ -103,7 +121,7 @@ public class NPC : Humanoid
     {
         if (transform.childCount != 0) return;
 
-        GameManager._Instance._NPCPool.GetOneFromPool().transform.SetParent(transform);
+        GameManager._Instance._NPCPool.GetOneFromPool(_TargetPoolNPC).transform.SetParent(transform);
         transform.GetChild(0).localPosition = Vector3.zero;
         _Rigidbody.isKinematic = false;
         _Rigidbody.WakeUp();
@@ -117,7 +135,10 @@ public class NPC : Humanoid
         if (transform.childCount == 0) return;
 
         if (_ChangeShaderCompleted)
+        {
+            _TargetPoolNPC = transform.GetChild(0).gameObject;
             GameManager._Instance._NPCPool.GameObjectToPool(transform.GetChild(0).gameObject);
+        }
         else
             Destroy(transform.GetChild(0).gameObject);
 
@@ -181,7 +202,7 @@ public class NPC : Humanoid
         }
         else
         {
-            _nextPositionCheckCounter = 0f;
+            _nextPositionCheckCounter -= _nextPositionCheckThreshold;
 
             //check for cliff
             bool isStopping;
@@ -249,8 +270,6 @@ public class NPC : Humanoid
     }
     public void Stop()
     {
-        if (_segmentatePathCoroutine != null)
-            StopCoroutine(_segmentatePathCoroutine);
         _cornersFromPath.Clear();
         _MoveTargetPosition = transform.position;
         _LastCornerFromPath = transform.position;
@@ -261,90 +280,52 @@ public class NPC : Humanoid
     public void ArrangeNewMovementTarget(Vector3 targetPos)
     {
         _MoveTargetPosition = targetPos;
-        GameManager._Instance.CoroutineCall(ref _segmentatePathCoroutine, SegmentatePath(), this);
     }
-    private IEnumerator SegmentatePath()
+    private void ArrangePath()
     {
-        bool breakCoroutine = true;
-        while (true)
+        if (!_isPathEnded)
         {
             if (_tryToCreatePathTimer < _tryToCreatePathThreshold)
             {
                 _tryToCreatePathTimer += Time.deltaTime;
-                yield return null;
-                continue;
+                return;
             }
-            _tryToCreatePathTimer = 0f;
-
-            if (!_isPathEnded) { yield return null; continue; }
-            Vector3 dist = (_MoveTargetPosition - transform.position);
-            if (new Vector3(dist.x, 0f, dist.z).magnitude < 1f) break;
-
-            breakCoroutine = true;
-            Vector3 segmentatedTarget = _MoveTargetPosition;
-            if (new Vector3(dist.x, 0f, dist.z).magnitude > _segmentationMagnitude)
-            {
-                breakCoroutine = false;
-                segmentatedTarget = transform.position + new Vector3((_MoveTargetPosition - transform.position).x, transform.position.y, (_MoveTargetPosition - transform.position).z).normalized * _segmentationMagnitude;
-                //segmentatedTarget = GetWalkableTerrainPosition(segmentatedTarget);
-            }
-            _currentPath = new NavMeshPath();
-            NavMesh.CalculatePath(transform.position, segmentatedTarget, NavMesh.AllAreas, _currentPath);
-            _isPathEnded = false;
-            _cornersFromPath.Clear();
-            _nextPositionCheckCounter = 1f;
-            foreach (var corner in _currentPath.corners)
-            {
-                _cornersFromPath.Add(corner);
-            }
-            if (_cornersFromPath.Count > 1)
-            {
-                _LastCornerFromPath = _cornersFromPath[1];
-                _directionInputFromPath = new Vector2(_cornersFromPath[1].x - transform.position.x, _cornersFromPath[1].z - transform.position.z).normalized;
-                _cornersFromPath.RemoveAt(1);
-                _cornersFromPath.RemoveAt(0);
-            }
-            else
-            {
-                _cornersFromPath.Clear();
-                _directionInputFromPath = Vector2.zero;
-            }
-            if (breakCoroutine)
-            {
-                yield break;
-            }
-
-            yield return null;
+            _tryToCreatePathTimer -= _tryToCreatePathThreshold;
         }
 
-    }
-    /*
-    private Vector3 GetWalkableTerrainPosition(Vector3 segmentatedPos)
-    {
-        Vector3 rayPos = segmentatedPos;
-        float radiusStep = 2f;
-        int angleStep = 30;
-        float radius, angle;
-        for (int i = 0; i < 20; i++)
+
+        Vector3 dist = (_MoveTargetPosition - transform.position);
+        if (new Vector3(dist.x, 0f, dist.z).magnitude < 1f) { Stop(); return; }
+
+        Vector3 segmentatedTarget = _MoveTargetPosition;
+        if (new Vector3(dist.x, 0f, dist.z).magnitude > _segmentationMagnitude)
         {
-            if (Physics.Raycast(rayPos + Vector3.up * 1000f, -Vector3.up, out RaycastHit hit, 1200f, GameManager._Instance._TerrainAndSolidMask))
-            {
-                if (hit.collider == null) continue;
-
-                if (hit.collider.gameObject.layer == LayerMask.NameToLayer("Terrain"))
-                {
-                    segmentatedPos.y = hit.point.y;
-                    return segmentatedPos;
-                }
-            }
-            radius = (i / (360 / angleStep)) * radiusStep;
-            angle = (i % (360 / angleStep)) * angleStep * Mathf.Deg2Rad;
-            rayPos = segmentatedPos + new Vector3(Mathf.Cos(angle), 0, Mathf.Sin(angle)) * radius;
+            segmentatedTarget = transform.position + new Vector3((_MoveTargetPosition - transform.position).x, transform.position.y, (_MoveTargetPosition - transform.position).z).normalized * _segmentationMagnitude;
+            //segmentatedTarget = GetWalkableTerrainPosition(segmentatedTarget);
         }
+        _CurrentPath.ClearCorners();
+        NavMesh.CalculatePath(transform.position, segmentatedTarget, NavMesh.AllAreas, _CurrentPath);
+        _isPathEnded = false;
+        _cornersFromPath.Clear();
+        _nextPositionCheckCounter = 1f;
+        foreach (var corner in _CurrentPath.corners)
+        {
+            _cornersFromPath.Add(corner);
+        }
+        if (_cornersFromPath.Count > 1)
+        {
+            _LastCornerFromPath = _cornersFromPath[1];
+            _directionInputFromPath = new Vector2(_cornersFromPath[1].x - transform.position.x, _cornersFromPath[1].z - transform.position.z).normalized;
+            _cornersFromPath.RemoveAt(1);
+            _cornersFromPath.RemoveAt(0);
+        }
+        else
+        {
+            _cornersFromPath.Clear();
+            _directionInputFromPath = Vector2.zero;
+        }
+    }
 
-        Debug.LogError("Segmentation Ray Did Not Hit!");
-        return segmentatedPos;
-    }*/
     public void ArrangeMovementCorners()
     {
         if (_isPathEnded) return;

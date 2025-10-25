@@ -22,7 +22,10 @@ public class LocomotionSystem : MonoBehaviour
     public const float AnimatorSprintSpeedDefault = 1f;
 
     [HideInInspector] public float AnimatorMaxSpeedMultiplier = 1f;
-    [HideInInspector] public float MovementSpeedMultiplier = 1f;
+    [HideInInspector] public float MovementSpeedMultiplier => MovementSpeedMultiplierMoveState * MovementSpeedMultiplierHandState * MovementSpeedMultiplierHealthState;
+    [HideInInspector] public float MovementSpeedMultiplierMoveState = 1f;
+    [HideInInspector] public float MovementSpeedMultiplierHandState = 1f;
+    [HideInInspector] public float MovementSpeedMultiplierHealthState = 1f;
 
     private float _stamina;
     public float Stamina { get => _stamina; set { _stamina = Mathf.Clamp(value, 0f, MaxStamina); } }

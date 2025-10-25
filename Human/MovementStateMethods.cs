@@ -149,7 +149,19 @@ public static class MovementStateMethods
     }
     private static void CheckSprintForPlayer(bool runInput, bool sprintInput, Player player)
     {
-        bool sprintConditions = player._DirectionInput.sqrMagnitude > 0.1f && CanRunWithStamina(player) && player._IsGrounded && IsMovingForward(player) && player._MovementState is Locomotion;
+        bool sprintConditions;
+        if (player._MovementState is Swim)
+        {
+            player._LocomotionSystem.FreeMovementSetting.walkByDefault = true;
+            sprintConditions = player._DirectionInput.sqrMagnitude > 0.1f && CanRunWithStamina(player) && IsMovingForward(player);
+            if ((sprintInput || runInput) && sprintConditions)
+                player._IsSprinting = true;
+            else
+                player._IsSprinting = false;
+            return;
+        }
+
+         sprintConditions = player._DirectionInput.sqrMagnitude > 0.1f && CanRunWithStamina(player) && player._IsGrounded && IsMovingForward(player) && player._MovementState is Locomotion;
 
         if ((sprintInput || runInput) && sprintConditions)
         {
@@ -177,7 +189,19 @@ public static class MovementStateMethods
     }
     private static void CheckSprintForNPC(bool runInput, bool sprintInput, NPC npc)
     {
-        bool sprintConditions = npc._DirectionInput.sqrMagnitude > 0.1f && CanRunWithStamina(npc) && npc._IsGrounded && IsMovingForward(npc) && npc._MovementState is Locomotion && new Vector3((npc._LastCornerFromPath - npc.transform.position).x, 0f, (npc._LastCornerFromPath - npc.transform.position).z).magnitude > 0.7f;
+        bool sprintConditions;
+        if (npc._MovementState is Swim)
+        {
+            npc._LocomotionSystem.FreeMovementSetting.walkByDefault = true;
+            sprintConditions = npc._DirectionInput.sqrMagnitude > 0.1f && CanRunWithStamina(npc) && IsMovingForward(npc) && new Vector3((npc._LastCornerFromPath - npc.transform.position).x, 0f, (npc._LastCornerFromPath - npc.transform.position).z).magnitude > 0.7f;
+            if ((sprintInput || runInput) && sprintConditions)
+                npc._IsSprinting = true;
+            else
+                npc._IsSprinting = false;
+            return;
+        }
+
+        sprintConditions = npc._DirectionInput.sqrMagnitude > 0.1f && CanRunWithStamina(npc) && npc._IsGrounded && IsMovingForward(npc) && npc._MovementState is Locomotion && new Vector3((npc._LastCornerFromPath - npc.transform.position).x, 0f, (npc._LastCornerFromPath - npc.transform.position).z).magnitude > 0.7f;
 
         if ((sprintInput || runInput) && sprintConditions)
         {
@@ -243,16 +267,12 @@ public static class MovementStateMethods
             human._JumpCounter = 0;
             human._IsJumping = false;
         }
-        // apply extra force to the jump height   
+
+        human._IsSprinting = true;//
         var vel = human._Rigidbody.linearVelocity;
         vel.y = human._LocomotionSystem.jumpHeight;
 
         human._Rigidbody.linearVelocity = vel;
-        /*if (human is Player)
-            (human as Player).Rigidbody.velocity = vel;
-        else
-            (human as NPC).Jump(vel);*/
-
     }
 
     public static void AirControl(Humanoid human)
@@ -264,7 +284,6 @@ public static class MovementStateMethods
 
         if (human._LocomotionSystem.jumpWithRigidbodyForce && !human._IsGrounded)
         {
-            //if (human is Player)
             human._Rigidbody.AddForce(human._LocomotionSystem.moveDirection * human._LocomotionSystem.airSpeed * Time.fixedDeltaTime, ForceMode.VelocityChange);
             return;
         }
@@ -280,12 +299,7 @@ public static class MovementStateMethods
         human._Rigidbody.linearVelocity = Vector3.Lerp(human._Rigidbody.linearVelocity, targetVelocity, human._LocomotionSystem.airSmooth * Time.fixedDeltaTime);
     }
 
-    /*public static bool jumpFwdCondition(Humanoid human)
-    {
-        Vector3 p1 = human.transform.position + human.AnimationSystem._capsuleCollider.center + Vector3.up * -human.AnimationSystem._capsuleCollider.height * 0.5F;
-        Vector3 p2 = p1 + Vector3.up * human.AnimationSystem._capsuleCollider.height;
-        return Physics.CapsuleCastAll(p1, p2, human.AnimationSystem._capsuleCollider.radius * 0.5f, human.transform.forward, 0.6f, human.AnimationSystem.groundLayer).Length == 0;
-    }*/
+   
 
     #endregion
 
@@ -373,12 +387,7 @@ public static class MovementStateMethods
         return groundAngle;
     }
 
-    /*private static float GroundAngleFromDirection(Humanoid human)
-    {
-        var dir = human.IsStrafing && (human as Player).DirectionInput.magnitude > 0 ? (human.transform.right * (human as Player).HorizontalInput + human.transform.forward * (human as Player).VerticalInput).normalized : human.transform.forward;
-        var movementAngle = Vector3.Angle(dir, human.LocomotionSystem.groundHit.normal) - 90;
-        return movementAngle;
-    }*/
+    
 
     #endregion
 
@@ -408,8 +417,7 @@ public static class MovementStateMethods
         if (direction.magnitude > 1f)
             direction.Normalize();
 
-        Vector3 targetPosition = human.transform.position + direction * (human._StopMove ? 0 : human._LocomotionSystem.moveSpeed * human._LocomotionSystem.MovementSpeedMultiplier) * Time.fixedDeltaTime;
-        Vector3 targetVelocity = (targetPosition - human.transform.position) / Time.fixedDeltaTime;
+        Vector3 targetVelocity = direction * (human._StopMove ? 0 : human._LocomotionSystem.moveSpeed * human._LocomotionSystem.MovementSpeedMultiplier);
 
         bool useVerticalVelocity = !(human._MovementState is Prone);
         if (useVerticalVelocity) targetVelocity.y = human._Rigidbody.linearVelocity.y;
@@ -444,11 +452,7 @@ public static class MovementStateMethods
         human._StopMove = false;
     }
 
-    /*public static void RotateToPosition(Vector3 position, Humanoid human)
-    {
-        Vector3 desiredDirection = position - human.transform.position;
-        RotateToDirection(desiredDirection.normalized, human);
-    }*/
+    
 
     private static void RotateToDirection(Vector3 direction, Humanoid human, float speed = 0f)
     {

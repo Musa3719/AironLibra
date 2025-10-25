@@ -36,8 +36,8 @@ public class Locomotion : MovementState
         _stateChangeCounter = 0.1f;
         _human._LocomotionSystem._defaultCollider.enabled = true;
         _human.ChangeAnimation("Free Locomotion", animChangeTime);
-        _human._LocomotionSystem.MovementSpeedMultiplier = 1f;
-        if (_human._Animator.avatar != null)
+        _human._LocomotionSystem.MovementSpeedMultiplierMoveState = 1f;
+        if (_human._Animator.avatar != null && Options._Instance._IsFootIKEnabled)
             _human._FootIKComponent.enabled = true;
     }
 
@@ -66,9 +66,9 @@ public class Locomotion : MovementState
             }
         }
 
-        if (!_human._FootIKComponent.enabled && _human._Animator.avatar != null && _human._IsGrounded)
+        if (!_human._FootIKComponent.enabled && _human._Animator.avatar != null && _human._IsGrounded && Options._Instance._IsFootIKEnabled)
             _human._FootIKComponent.enabled = true;
-        else if ((_human._Animator.avatar == null || !_human._IsGrounded) && _human._FootIKComponent.enabled)
+        else if ((!Options._Instance._IsFootIKEnabled || _human._Animator.avatar == null || !_human._IsGrounded) && _human._FootIKComponent.enabled)
             _human._FootIKComponent.enabled = false;
 
 
@@ -113,9 +113,9 @@ public class Crouch : MovementState
         if (oldState is Prone)
             _waitForMoveAfterProne = 0.75f;
         else
-            _human._LocomotionSystem.MovementSpeedMultiplier = 0.9f;
+            _human._LocomotionSystem.MovementSpeedMultiplierMoveState = 0.9f;
 
-        if (_human._Animator.avatar != null)
+        if (_human._Animator.avatar != null && Options._Instance._IsFootIKEnabled)
             _human._FootIKComponent.enabled = true;
     }
 
@@ -127,10 +127,10 @@ public class Crouch : MovementState
     {
         if (_waitForMoveAfterProne > 0f)
         {
-            _human._LocomotionSystem.MovementSpeedMultiplier = 0f;
+            _human._LocomotionSystem.MovementSpeedMultiplierMoveState = 0f;
             _waitForMoveAfterProne -= Time.deltaTime;
             if (_waitForMoveAfterProne <= 0f)
-                _human._LocomotionSystem.MovementSpeedMultiplier = 0.9f;
+                _human._LocomotionSystem.MovementSpeedMultiplierMoveState = 0.9f;
         }
         //Check For State Change
         if (MovementStateMethods.IsInDeepWater(_human))
@@ -158,9 +158,9 @@ public class Crouch : MovementState
         }
 
 
-        if (!_human._FootIKComponent.enabled && _human._Animator.avatar != null && _human._IsGrounded)
+        if (!_human._FootIKComponent.enabled && _human._Animator.avatar != null && _human._IsGrounded && Options._Instance._IsFootIKEnabled)
             _human._FootIKComponent.enabled = true;
-        else if ((_human._Animator.avatar == null || !_human._IsGrounded) && _human._FootIKComponent.enabled)
+        else if ((!Options._Instance._IsFootIKEnabled || _human._Animator.avatar == null || !_human._IsGrounded) && _human._FootIKComponent.enabled)
             _human._FootIKComponent.enabled = false;
 
         if (_stateChangeCounter > 0f)
@@ -201,7 +201,7 @@ public class Prone : MovementState
         else
             _human.ChangeAnimation("Prone");
 
-        _human._LocomotionSystem.MovementSpeedMultiplier = 0.5f;
+        _human._LocomotionSystem.MovementSpeedMultiplierMoveState = 0.5f;
         _human._FootIKComponent.enabled = false;
     }
 
@@ -252,7 +252,7 @@ public class Swim : MovementState
     public Humanoid _Human => _human;
     private Humanoid _human;
     private float _stateChangeCounter;
-    private bool _isAnimForward;
+    private bool _isSwimAnimForward;
     public Swim(Humanoid human)
     {
         this._human = human;
@@ -263,7 +263,7 @@ public class Swim : MovementState
         _stateChangeCounter = 0.1f;
         _human._LocomotionSystem._defaultCollider.enabled = true;
         _human.ChangeAnimation("Swim_Idle");
-        _human._LocomotionSystem.MovementSpeedMultiplier = 0.8f;
+        _human._LocomotionSystem.MovementSpeedMultiplierMoveState = 0.8f;
         _human._FootIKComponent.enabled = false;
         _human._IsJumping = false;
     }
@@ -282,15 +282,15 @@ public class Swim : MovementState
             return;
         }
 
-        if (_human._DirectionInput.magnitude > 0.2f && !_isAnimForward)
-        {
-            _human.ChangeAnimation("Swim_Forward", 0.4f);
-            _isAnimForward = true;
-        }
-        else if (_human._DirectionInput.magnitude < 0.2f && _isAnimForward)
+        if (_human._DirectionInput.magnitude < 0.2f && _isSwimAnimForward)
         {
             _human.ChangeAnimation("Swim_Idle", 0.4f);
-            _isAnimForward = false;
+            _isSwimAnimForward = false;
+        }
+        else if (_human._DirectionInput.magnitude > 0.2f && !_isSwimAnimForward)
+        {
+            _human.ChangeAnimation("Swim_Forward", 0.4f);
+            _isSwimAnimForward = true;
         }
         MovementStateMethods.UpdateMoveDirection(_human, GameManager._Instance._MainCamera.transform);
         MovementStateMethods.CheckSprint(_human);
@@ -369,17 +369,18 @@ public interface HandState : IState
 }
 
 #region HandStates
-public class Empty : HandState
+public class EmptyHandsState : HandState
 {
     public Humanoid _Human => _human;
     private Humanoid _human;
-    public Empty(Humanoid human)
+    public EmptyHandsState(Humanoid human)
     {
         this._human = human;
     }
     public void EnterState(HandState oldState)
     {
-
+        _human._LocomotionSystem.MovementSpeedMultiplierHandState = 1f;
+        _human.ChangeAnimation("EmptyHands");
     }
 
     public void ExitState(HandState newState)
@@ -388,21 +389,34 @@ public class Empty : HandState
     }
     public void DoState()
     {
+        //Check For State Change
+        if (HandStateMethods.CheckForCarryState(_human))
+        {
+            _human.EnterState(new CarryHandState(_human));
+            return;
+        }
+        if (HandStateMethods.CheckForWeaponState(_human))
+        {
+            _human.EnterState(new WeaponHandState(_human));
+            return;
+        }
+
         if (_human is Player)
             HandStateMethods.ArrangeLookAtForCamPosition(_human as Player);
     }
 }
-public class CarryBigHandState : HandState
+public class CarryHandState : HandState
 {
     public Humanoid _Human => _human;
     private Humanoid _human;
-    public CarryBigHandState(Humanoid human)
+    public CarryHandState(Humanoid human)
     {
         this._human = human;
     }
     public void EnterState(HandState oldState)
     {
-
+        _human._LocomotionSystem.MovementSpeedMultiplierHandState = 0.35f;//arrange with str and current tired&stamina value
+        _human.ChangeAnimation("CarryHands");
     }
 
     public void ExitState(HandState newState)
@@ -411,36 +425,24 @@ public class CarryBigHandState : HandState
     }
     public void DoState()
     {
+        //Check For State Change
+        if (HandStateMethods.CheckForEmptyState(_human))
+        {
+            _human.EnterState(new EmptyHandsState(_human));
+            return;
+        }
+        if (HandStateMethods.CheckForWeaponState(_human))
+        {
+            _human.EnterState(new WeaponHandState(_human));
+            return;
+        }
+
+
         if (_human is Player)
             HandStateMethods.ArrangeLookAtForCamPosition(_human as Player);
     }
 }
-public class ToolHandState : HandState
-{
-    public Humanoid _Human => _human;
-    private Humanoid _human;
 
-    private bool _isUsingTool;
-
-    public ToolHandState(Humanoid human)
-    {
-        this._human = human;
-    }
-    public void EnterState(HandState oldState)
-    {
-
-    }
-
-    public void ExitState(HandState newState)
-    {
-
-    }
-    public void DoState()
-    {
-        if ((_human is Player) && !_isUsingTool)
-            HandStateMethods.ArrangeLookAtForCamPosition(_human as Player);
-    }
-}
 public class WeaponHandState : HandState
 {
     public Humanoid _Human => _human;
@@ -451,7 +453,8 @@ public class WeaponHandState : HandState
     }
     public void EnterState(HandState oldState)
     {
-
+        _human._LocomotionSystem.MovementSpeedMultiplierHandState = 0.8f;
+        _human.ChangeAnimation("WeaponHands");
     }
 
     public void ExitState(HandState newState)
@@ -460,6 +463,18 @@ public class WeaponHandState : HandState
     }
     public void DoState()
     {
+        //Check For State Change
+        if (HandStateMethods.CheckForCarryState(_human))
+        {
+            _human.EnterState(new CarryHandState(_human));
+            return;
+        }
+        if (HandStateMethods.CheckForEmptyState(_human))
+        {
+            _human.EnterState(new EmptyHandsState(_human));
+            return;
+        }
+
         if (_human is Player)
             HandStateMethods.ArrangeLookAtForCamPosition(_human as Player);
     }

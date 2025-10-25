@@ -17,27 +17,21 @@ public class CameraController : MonoBehaviour
     private float _rad;
     private float _quitCoolAngleModeCounter;
 
-    private List<GameObject> _transparentObjects;
-    #region For Optimization
-    private List<GameObject> _objectsWillBeRemoved;
-    #endregion
-
     private void Awake()
     {
         _Instance = this;
-        _objectsWillBeRemoved = new List<GameObject>();
-        _transparentObjects = new List<GameObject>();
         _realCameraDistance = 10f;
         _CameraDistance = _realCameraDistance;
         _maxDistance = 14f;
         _minDistance = 7f;
     }
-    
+    private void Start()
+    {
+        StartCoroutine(ArrangeViewBlockCoroutine());
+    }
     private void Update()
     {
         if (GameManager._Instance._IsGameStopped) return;
-
-        ArrangeViewBlock();//
 
         if (M_Input.GetButton("CoolCamera"))
         {
@@ -66,7 +60,6 @@ public class CameraController : MonoBehaviour
         {
             _realCameraDistance = Mathf.Clamp(_realCameraDistance - zoomInput, _minDistance, _maxDistance);
         }
-        _CameraDistance = _realCameraDistance;//
 
         if (WorldHandler._Instance._Player._CameraAngleInput)
         {
@@ -90,7 +83,7 @@ public class CameraController : MonoBehaviour
     {
         if (GameManager._Instance._IsGameStopped) return;
 
-        float lerpSpeed = WorldHandler._Instance._Player._CameraAngleInput ? 4f : 2f;
+        float lerpSpeed = 6f;//WorldHandler._Instance._Player._CameraAngleInput ? 6f : 3f;
         WorldHandler._Instance._Player._LookAtForCam.position =
             new Vector3(WorldHandler._Instance._Player._LookAtForCam.position.x, Mathf.Clamp(WorldHandler._Instance._Player._LookAtForCam.position.y, WorldHandler._Instance._SeaLevel, float.MaxValue), WorldHandler._Instance._Player._LookAtForCam.position.z);
         lerpSpeed = (WorldHandler._Instance._Player._LookAtForCam.position - transform.position).magnitude > _CameraDistance * 2f ? 6f : lerpSpeed;
@@ -100,59 +93,10 @@ public class CameraController : MonoBehaviour
         transform.position = Vector3.Lerp(transform.position, WorldHandler._Instance._Player._LookAtForCam.position + realFollowOffset * _CameraDistance * (_IsInCoolAngleMod ? 0.6f : 1f), Time.deltaTime * lerpSpeed);
         Vector3 targetAngles = new Vector3(_IsInCoolAngleMod ? 30f : 45f, Mathf.Atan2(_FollowOffset.x, _FollowOffset.z) * Mathf.Rad2Deg + 180f, 0f);
         Quaternion targetRotation = Quaternion.Euler(targetAngles.x, targetAngles.y, targetAngles.z);
-        transform.rotation = Quaternion.Lerp(transform.rotation, targetRotation, Time.deltaTime * 4f);
+        transform.rotation = Quaternion.Lerp(transform.rotation, targetRotation, Time.deltaTime * lerpSpeed);
     }
 
-    private void ArrangeViewBlock()
-    {
-        float distance = (WorldHandler._Instance._Player.transform.position - transform.position).magnitude - 0.75f;
-        RaycastHit[] hits = Physics.RaycastAll(transform.position, (WorldHandler._Instance._Player.transform.position - transform.position).normalized, distance, GameManager._Instance._SolidAndHumanMask);
-        foreach (var hit in hits)
-        {
-            if (hit.collider != null && hit.collider.gameObject.layer == LayerMask.NameToLayer("SolidObject") && hit.collider.gameObject.CompareTag("CanGoTransparent"))
-            {
-                ObjectInFrontOfPlayer(hit.collider.gameObject);
-            }
-        }
-
-        CheckForTransparentToSolid(hits);
-    }
-
-    private void CheckForTransparentToSolid(RaycastHit[] hits)
-    {
-        _objectsWillBeRemoved.Clear();
-        foreach (var trObj in _transparentObjects)
-        {
-            if (!IsHitsContainsObj(hits, trObj))
-            {
-                _objectsWillBeRemoved.Add(trObj);
-                GameManager._Instance.ChangeSolidObjectShader(trObj, false);
-            }
-        }
-        foreach (var obj in _objectsWillBeRemoved)
-        {
-            _transparentObjects.Remove(obj);
-        }
-    }
-    private bool IsHitsContainsObj(RaycastHit[] hits, GameObject obj)
-    {
-        foreach (var hit in hits)
-        {
-            if (hit.collider.gameObject == obj)
-                return true;
-        }
-        return false;
-
-    }
-    private void ObjectInFrontOfPlayer(GameObject obj)
-    {
-        if (!_transparentObjects.Contains(obj))
-        {
-            _transparentObjects.Add(obj);
-            GameManager._Instance.ChangeSolidObjectShader(obj, true);
-        }
-    }
-    /*private IEnumerator ArrangeViewBlock()
+    private IEnumerator ArrangeViewBlockCoroutine()
     {
         while (true)
         {
@@ -165,7 +109,7 @@ public class CameraController : MonoBehaviour
                     Physics.Raycast(transform.position, (WorldHandler._Instance._Player.transform.position + Vector3.up * 1.2f - transform.position).normalized, out hit, 300f, GameManager._Instance._SolidAndHumanMask);
                     if (hit.collider != null && hit.collider.gameObject.layer == LayerMask.NameToLayer("SolidObject"))
                     {
-                        _CameraDistance = Mathf.Clamp(_CameraDistance - 0.5f, 2f, _realCameraDistance);
+                        _CameraDistance = Mathf.Clamp(_CameraDistance - 0.5f, 5f, _realCameraDistance);
                     }
                 }
             }
@@ -175,11 +119,11 @@ public class CameraController : MonoBehaviour
                 Vector3 dir = (WorldHandler._Instance._Player.transform.position - targetPos).normalized;
                 Physics.Raycast(targetPos, dir, out hit, 300f, GameManager._Instance._SolidAndHumanMask);
                 if (!(hit.collider != null && hit.collider.gameObject.layer == LayerMask.NameToLayer("SolidObject")))
-                    _CameraDistance = Mathf.Clamp(_CameraDistance + 0.5f, 2f, _realCameraDistance);
+                    _CameraDistance = Mathf.Clamp(_CameraDistance + 0.5f, 5f, _realCameraDistance);
             }
             yield return null;
         }
-    }*/
+    }
 
     public void ActivateCoolAngleMod()
     {
