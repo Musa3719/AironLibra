@@ -12,6 +12,14 @@ public class PrefabHolder : MonoBehaviour
     public Material _Pw_URP_Shared;
     public Material _Pw_URP_Solid;
 
+
+    public Sprite _EmptyItemBackground;
+    public Sprite _LoadingAdressableProcessSprite;
+    public Sprite _TakeItemSprite;
+    public Sprite _SendItemSprite;
+    public Sprite _EquipItemSprite;
+    public Sprite _UnequipItemSprite;
+
     private void Awake()
     {
         _Instance = this;

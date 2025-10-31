@@ -1,13 +1,15 @@
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
-using UnityEngine;
-using UnityEngine.SceneManagement;
-using UnityEngine.UI;
-using UnityEngine.AddressableAssets;
-using Unity.AI.Navigation;
+using TMPro;
 using UMA;
 using UMA.CharacterSystem;
+using Unity.AI.Navigation;
+using UnityEngine;
+using UnityEngine.AddressableAssets;
+using UnityEngine.ResourceManagement.AsyncOperations;
+using UnityEngine.SceneManagement;
+using UnityEngine.UI;
 
 public class GameManager : MonoBehaviour
 {
@@ -15,8 +17,14 @@ public class GameManager : MonoBehaviour
     public float _TerrainDimensionMagnitude => 1024f;
     public int _NumberOfColumnsForTerrains => 1;
     public int _NumberOfRowsForTerrains => 1;
+
+    public Dictionary<string, AssetReferenceGameObject> _ItemNameToPrefab;
+    public Dictionary<string, AssetReferenceSprite> _ItemNameToSprite;
+
     public List<AssetReferenceGameObject>[,] _ObjectsInChunk;
+    public List<Transform>[,] _ObjectParentsInChunk;
     public List<Vector3>[,] _ObjectPositionsInChunk;
+    public List<Vector3>[,] _ObjectRotationsInChunk;
     //chest data
     //npc data
 
@@ -26,6 +34,11 @@ public class GameManager : MonoBehaviour
     public GameObject _StopScreen { get; private set; }
     public GameObject _InGameMenu { get; private set; }
     public GameObject _InventoryScreen { get; private set; }
+    public GameObject _AnotherInventoryList { get; private set; }
+    public GameObject _AnotherInventoryChestList { get; private set; }
+    public Inventory _AnotherInventory { get; private set; }
+    public GameObject _InventoryItemInteractPopup { get; private set; }
+    public GameObject _InventoryItemInfoPopup { get; private set; }
     public GameObject _MapScreen { get; private set; }
     public GameObject _DialogueScreen { get; private set; }
     public GameObject _GameHUD { get; private set; }
@@ -33,10 +46,25 @@ public class GameManager : MonoBehaviour
     public GameObject _LoadScreen { get; private set; }
     public GameObject _SaveScreen { get; private set; }
     public GameObject _LoadingObject { get; private set; }
+    public Transform _EnvironmentTransform { get; private set; }
     public ObjectPool _NPCPool { get; private set; }
+    public InventorySlotUI _LastClickedSlotUI { get; set; }
+
+    private Sprite[] _equipmentSlotDefaultImages;
+    private Image[] _playerInventoryImages;
+    private Image[] _playerEquipmentImages;
+    private Image[] _playerInventoryBackCarryImages;
+    private Image[] _anotherInventoryImages;
+    private Image[] _anotherEquipmentImages;
+    private Image[] _anotherInventoryChestImages;
+    private Image[] _anotherInventoryBackCarryImages;
+    private Dictionary<string, AsyncOperationHandle<Sprite>> _nameToLoadedSprites;
 
     public bool _IsGameStopped { get; private set; }
     public int _InGameMenuNumber { get; private set; }
+
+    public InteractBoxUI _InteractBoxUI { get; private set; }
+    public int _SplitAmount { get; set; }
 
     public int _LevelIndex { get; private set; }
 
@@ -62,6 +90,7 @@ public class GameManager : MonoBehaviour
 
     private void Awake()
     {
+        _Instance = this;
         transform.Find("CharacterCreation").GetComponent<CharacterCreation>().Init();
         Shader.EnableKeyword("_USEGLOBALSNOWLEVEL");
         Shader.EnableKeyword("_PW_GLOBAL_COVER_LAYER");
@@ -72,9 +101,10 @@ public class GameManager : MonoBehaviour
         _femaleDnaNames = UMAGlobalContext.Instance.GetRace("HumanFemale").GetDNANames();
 
         NPCManager._Comparer = new NPCDistanceComparer();
-        _Instance = this;
         _ObjectsInChunk = new List<AssetReferenceGameObject>[_NumberOfColumnsForTerrains, _NumberOfRowsForTerrains];
         _ObjectPositionsInChunk = new List<Vector3>[_NumberOfColumnsForTerrains, _NumberOfRowsForTerrains];
+        _ObjectRotationsInChunk = new List<Vector3>[_NumberOfColumnsForTerrains, _NumberOfRowsForTerrains];
+        _ObjectParentsInChunk = new List<Transform>[_NumberOfColumnsForTerrains, _NumberOfRowsForTerrains];
         _MainCamera = Camera.main.gameObject;
         _Player = GameObject.FindGameObjectWithTag("Player");
 
@@ -86,17 +116,69 @@ public class GameManager : MonoBehaviour
         _LevelIndex = SceneManager.GetActiveScene().buildIndex;
         if (_LevelIndex != 0)
         {
+            _EnvironmentTransform = GameObject.Find("Environment").transform;
             _StopScreen = GameObject.FindGameObjectWithTag("UI").transform.Find("UIMain").Find("StopScreen").gameObject;
             _InGameMenu = GameObject.FindGameObjectWithTag("UI").transform.Find("UIMain").Find("InGameMenu").gameObject;
             _InventoryScreen = GameObject.FindGameObjectWithTag("UI").transform.Find("UIMain").Find("InGameMenu").Find("InventoryScreen").gameObject;
+            _AnotherInventoryList = GameObject.FindGameObjectWithTag("UI").transform.Find("UIMain").Find("InGameMenu").Find("InventoryScreen").Find("AnotherInventory").gameObject;
+            _AnotherInventoryChestList = GameObject.FindGameObjectWithTag("UI").transform.Find("UIMain").Find("InGameMenu").Find("InventoryScreen").Find("AnotherInventoryChest").gameObject;
+            _InventoryItemInteractPopup = GameObject.FindGameObjectWithTag("UI").transform.Find("UIMain").Find("InGameMenu").Find("InventoryScreen").Find("InteractScreen").gameObject;
+            _InteractBoxUI = GameObject.FindGameObjectWithTag("UI").transform.Find("UIMain").Find("InGameMenu").Find("InventoryScreen").Find("InteractScreen").Find("InteractBox").GetComponent<InteractBoxUI>();
+            _InventoryItemInfoPopup = GameObject.FindGameObjectWithTag("UI").transform.Find("UIMain").Find("InGameMenu").Find("InventoryScreen").Find("InfoScreen").gameObject;
             _MapScreen = GameObject.FindGameObjectWithTag("UI").transform.Find("UIMain").Find("InGameMenu").Find("MapScreen").gameObject;
             _DialogueScreen = GameObject.FindGameObjectWithTag("UI").transform.Find("UIMain").Find("InGameMenu").Find("DialogueScreen").gameObject;
             _GameHUD = GameObject.FindGameObjectWithTag("UI").transform.Find("UIMain").Find("InGameScreen").gameObject;
             _SaveScreen = GameObject.FindGameObjectWithTag("UI").transform.Find("UIMain").Find("Save").gameObject;
 
             _NPCPool = transform.Find("NPC_Pool").GetComponent<ObjectPool>();
-        }
 
+            Transform playerItemList = _InventoryScreen.transform.Find("OwnInventory").Find("ItemList");
+            _playerInventoryImages = new Image[playerItemList.childCount];
+            for (int i = 0; i < playerItemList.childCount; i++)
+            {
+                _playerInventoryImages[i] = playerItemList.GetChild(i).GetComponent<Image>();
+            }
+            Transform playerEquipmentList = _InventoryScreen.transform.Find("OwnInventory").Find("Equipments");
+            _playerEquipmentImages = new Image[playerEquipmentList.childCount];
+            _equipmentSlotDefaultImages = new Sprite[playerEquipmentList.childCount];
+            for (int i = 0; i < playerEquipmentList.childCount; i++)
+            {
+                _playerEquipmentImages[i] = playerEquipmentList.GetChild(i).GetComponent<Image>();
+                _equipmentSlotDefaultImages[i] = _playerEquipmentImages[i].sprite;
+            }
+            Transform playerBackCarryList = _InventoryScreen.transform.Find("OwnInventory").Find("BackCarry").Find("BackCarryList");
+            _playerInventoryBackCarryImages = new Image[playerBackCarryList.childCount];
+            for (int i = 0; i < playerBackCarryList.childCount; i++)
+            {
+                _playerInventoryBackCarryImages[i] = playerBackCarryList.GetChild(i).GetComponent<Image>();
+            }
+
+            Transform anotherInvItemList = _AnotherInventoryList.transform.Find("ItemList");
+            _anotherInventoryImages = new Image[anotherInvItemList.childCount];
+            for (int i = 0; i < anotherInvItemList.childCount; i++)
+            {
+                _anotherInventoryImages[i] = anotherInvItemList.GetChild(i).GetComponent<Image>();
+            }
+            Transform anotherEquipmentList = _InventoryScreen.transform.Find("AnotherInventory").Find("Equipments");
+            _anotherEquipmentImages = new Image[anotherEquipmentList.childCount];
+            for (int i = 0; i < anotherEquipmentList.childCount; i++)
+            {
+                _anotherEquipmentImages[i] = anotherEquipmentList.GetChild(i).GetComponent<Image>();
+            }
+            Transform anotherInvBackCarryList = _AnotherInventoryList.transform.Find("BackCarry").Find("BackCarryList");
+            _anotherInventoryBackCarryImages = new Image[anotherInvBackCarryList.childCount];
+            for (int i = 0; i < anotherInvBackCarryList.childCount; i++)
+            {
+                _anotherInventoryBackCarryImages[i] = anotherInvBackCarryList.GetChild(i).GetComponent<Image>();
+            }
+            Transform anotherInvChestList = _AnotherInventoryChestList.transform.Find("ItemList");
+            _anotherInventoryChestImages = new Image[anotherInvChestList.childCount];
+            for (int i = 0; i < anotherInvChestList.childCount; i++)
+            {
+                _anotherInventoryChestImages[i] = anotherInvChestList.GetChild(i).GetComponent<Image>();
+            }
+            _nameToLoadedSprites = new Dictionary<string, AsyncOperationHandle<Sprite>>();
+        }
     }
     private void Start()
     {
@@ -105,12 +187,20 @@ public class GameManager : MonoBehaviour
         else
             Time.timeScale = 1f;
 
+        if (_LevelIndex != 0)
+        {
+            InitDictionaries();
+        }
     }
 
     private void Update()
     {
         if (_LevelIndex != 0)
         {
+            if (_LastClickedSlotUI != null && M_Input.GetButtonDown("Fire1") && !_InteractBoxUI.IsHovered())
+            {
+                _InventoryItemInteractPopup.SetActive(false);
+            }
             NPCManager.Update();
 
             if (Gaia.ProceduralWorldsGlobalWeather.Instance.IsSnowing)
@@ -163,7 +253,7 @@ public class GameManager : MonoBehaviour
                 OpenInGameMenuScreen();
             }
         }
-        if (_InGameMenu.activeInHierarchy)
+        if (_LevelIndex != 0 && _InGameMenu.activeInHierarchy)
         {
             if (M_Input.GetButtonDown("UIRight"))
             {
@@ -192,7 +282,7 @@ public class GameManager : MonoBehaviour
                 {
                     if (_LoadingObject.activeInHierarchy) return;
 
-                    if (_InGameMenu.activeInHierarchy)
+                    if (_LevelIndex != 0 && _InGameMenu.activeInHierarchy)
                     {
                         CloseInGameMenuScreen();
                         UnstopGame();
@@ -225,8 +315,35 @@ public class GameManager : MonoBehaviour
 
     }
 
-    #region CommonMethods
+    public void InitDictionaries()
+    {
+        _ItemNameToPrefab = new Dictionary<string, AssetReferenceGameObject>();
+        _ItemNameToPrefab.Add("Apple", AddressablesController._Instance._AppleItem);
+        //_ItemNameToPrefab.Add("Copper Coin", AddressablesController._Instance._AppleItem);
 
+
+        _ItemNameToSprite = new Dictionary<string, AssetReferenceSprite>();
+        _ItemNameToSprite.Add("Apple", AddressablesController._Instance._AppleSprite);
+        //_ItemNameToSprite.Add("Copper Coin", AddressablesController._Instance._AppleSprite);
+    }
+    #region CommonMethods
+    public Sprite TextureToSprite(Texture texture)
+    {
+        RenderTexture rt = RenderTexture.GetTemporary(texture.width, texture.height, 0, RenderTextureFormat.Default, RenderTextureReadWrite.Linear);
+        Graphics.Blit(texture, rt);
+
+        RenderTexture previous = RenderTexture.active;
+        RenderTexture.active = rt;
+
+        Texture2D tex2D = new Texture2D(texture.width, texture.height, TextureFormat.RGBA32, false);
+        tex2D.ReadPixels(new Rect(0, 0, texture.width, texture.height), 0, 0);
+        tex2D.Apply();
+
+        RenderTexture.active = previous;
+        RenderTexture.ReleaseTemporary(rt);
+
+        return Sprite.Create(tex2D, new Rect(0, 0, tex2D.width, tex2D.height), new Vector2(0.5f, 0.5f));
+    }
     public Vector3 Vector2ToVector3(Vector2 vec)
     {
         return new Vector3(vec.x, 0f, vec.y);
@@ -361,15 +478,15 @@ public class GameManager : MonoBehaviour
     public void LoadChunk(int x, int y)
     {
         AddressablesController._Instance.LoadTerrainObjects(x, y);
-        //load chests
         AddressablesController._Instance.SpawnNpcs(x, y);
+        //Spawn Animals
         AddressablesController._Instance._IsChunkLoadedToScene[x, y] = true;
     }
     public void UnloadChunk(int x, int y)
     {
         AddressablesController._Instance._IsChunkLoadedToScene[x, y] = false;
         AddressablesController._Instance.DespawnNpcs(x, y);
-        //unload chests
+        //Despawn Animals
         AddressablesController._Instance.UnloadTerrainObjects(x, y);
     }
 
@@ -396,7 +513,7 @@ public class GameManager : MonoBehaviour
         int y = (int)(pos.z / _TerrainDimensionMagnitude);
         return new Vector2Int(x, y);
     }
-    public void CreateEnvironmentPrefabToWorld(AssetReferenceGameObject objRef, Vector3 pos)
+    public void CreateEnvironmentPrefabToWorld(AssetReferenceGameObject objRef, Transform parent, Vector3 pos, Vector3 angles, ref ItemHandleData itemHandleData)
     {
         Vector2Int chunk = GetChunkFromPosition(pos);
         if (_ObjectsInChunk[chunk.x, chunk.y] == null)
@@ -404,17 +521,33 @@ public class GameManager : MonoBehaviour
         _ObjectsInChunk[chunk.x, chunk.y].Add(objRef);
         if (_ObjectPositionsInChunk[chunk.x, chunk.y] == null)
             _ObjectPositionsInChunk[chunk.x, chunk.y] = new List<Vector3>();
+        if (_ObjectRotationsInChunk[chunk.x, chunk.y] == null)
+            _ObjectRotationsInChunk[chunk.x, chunk.y] = new List<Vector3>();
+        if (_ObjectParentsInChunk[chunk.x, chunk.y] == null)
+            _ObjectParentsInChunk[chunk.x, chunk.y] = new List<Transform>();
         _ObjectPositionsInChunk[chunk.x, chunk.y].Add(pos);
+        _ObjectRotationsInChunk[chunk.x, chunk.y].Add(angles);
+        _ObjectParentsInChunk[chunk.x, chunk.y].Add(parent);
+
+        itemHandleData._XChunk = chunk.x;
+        itemHandleData._YChunk = chunk.y;
+        itemHandleData._AssetRef = objRef;
 
         ReloadChunk(chunk.x, chunk.y);
     }
-    public void DestroyEnvironmentPrefabFromWorld(int x, int y, int i)
+    public void DestroyEnvironmentPrefabFromWorld(ItemHandleData itemHandleData)
     {
+        int x = itemHandleData._XChunk, y = itemHandleData._YChunk;
+        int i = _ObjectsInChunk[x, y].IndexOf(itemHandleData._AssetRef);
         if (_ObjectsInChunk[x, y] == null || i >= _ObjectsInChunk[x, y].Count) return;
         if (_ObjectPositionsInChunk[x, y] == null || i >= _ObjectPositionsInChunk[x, y].Count) return;
+        if (_ObjectRotationsInChunk[x, y] == null || i >= _ObjectRotationsInChunk[x, y].Count) return;
+        if (_ObjectParentsInChunk[x, y] == null || i >= _ObjectParentsInChunk[x, y].Count) return;
 
         _ObjectsInChunk[x, y].RemoveAt(i);
         _ObjectPositionsInChunk[x, y].RemoveAt(i);
+        _ObjectRotationsInChunk[x, y].RemoveAt(i);
+        _ObjectParentsInChunk[x, y].RemoveAt(i);
 
         ReloadChunk(x, y);
     }
@@ -472,7 +605,7 @@ public class GameManager : MonoBehaviour
         SaveSystemHandler._Instance._IsSettingPlayerDataForCreation = false;
 
         WorldHandler._Instance._Player._IsMale = SaveSystemHandler._Instance._PlayerIsMaleForCreation;
-        WorldAndNpcArranger.SetGender(WorldHandler._Instance._Player._UmaDynamicAvatar, WorldHandler._Instance._Player._IsMale);
+        NPCManager.SetGender(WorldHandler._Instance._Player._UmaDynamicAvatar, WorldHandler._Instance._Player._IsMale);
 
         WorldHandler._Instance._Player._DnaData = SaveSystemHandler._Instance._PlayerDnaDataForCreation;
 
@@ -491,6 +624,9 @@ public class GameManager : MonoBehaviour
         {
             WorldHandler._Instance._Player.WearWardrobe(wardrobeRecipes[i], true);
         }
+
+        WorldHandler._Instance._Player._MuscleLevel = WorldHandler._Instance._Player._DnaData["upperMuscle"];
+        WorldHandler._Instance._Player._FatLevel = WorldHandler._Instance._Player._DnaData["upperWeight"];
     }
     public void StartValuesForNewGame()
     {
@@ -506,12 +642,12 @@ public class GameManager : MonoBehaviour
         else
         {
             Debug.LogError("Player Character Not Set!");
-            WorldAndNpcArranger.SetGender(WorldHandler._Instance._Player._UmaDynamicAvatar, WorldHandler._Instance._Player._IsMale);
+            NPCManager.SetGender(WorldHandler._Instance._Player._UmaDynamicAvatar, WorldHandler._Instance._Player._IsMale);
             SetRandomDNA(WorldHandler._Instance._Player);
             SetRandomWardrobe(WorldHandler._Instance._Player, WorldHandler._Instance._Player._IsMale);
         }
 
-        ushort numberOfNpcs = 20;
+        ushort numberOfNpcs = 1;
         NPC createdNpc;
         Vector2Int chunk;
         for (int i = 0; i < numberOfNpcs; i++)
@@ -548,13 +684,27 @@ public class GameManager : MonoBehaviour
         float effectsAll = Random.Range(-0.06f, 0.06f);
         float value;
         SetRandomColors(human, human._UmaDynamicAvatar);
+
+        human._MuscleLevel = Random.Range(0.15f, 0.5f);
+        human._FatLevel = Random.Range(0.15f, 0.75f);
+        float headSize = 0.41f + (human._FatLevel * 1.5f + human._MuscleLevel) * 0.1f;
+        float neckSize = (human._FatLevel / 2f) + (human._MuscleLevel / 2f);
+
         foreach (var dnaName in dnaNames)
         {
             value = Random.Range(0.42f, 0.58f) + effectsAll;
-            if (dnaName == "headSize" || dnaName == "armLength" || dnaName == "feetSize" || dnaName == "forearmLength" || dnaName == "handsSize" || dnaName == "legsSize")
+            if (dnaName == "armLength" || dnaName == "forearmLength" || dnaName == "feetSize" || dnaName == "handsSize" || dnaName == "legsSize")
                 value = 0.5f;
             else if (dnaName == "height")
-                value = 0.5f + effectsAll;
+                value = 0.5f + effectsAll * 1.8f;
+            else if (dnaName == "headSize")
+                value = headSize;
+            else if (dnaName == "neckThickness")
+                value = neckSize;
+            else if (dnaName == "upperMuscle" || dnaName == "lowerMuscle" || dnaName == "armWidth" || dnaName == "forearmWidth" || dnaName == "bodyFitness")
+                value = human._MuscleLevel;
+            else if (dnaName == "upperWeight" || dnaName == "lowerWeight" || dnaName == "belly" || dnaName == "waist")
+                value = human._FatLevel;
             newDna.Add(dnaName, value);
         }
         human._DnaData = newDna;
@@ -574,7 +724,7 @@ public class GameManager : MonoBehaviour
             human._CharacterColors.Add("Skin", color);
 
         if (avatar != null)
-            WorldAndNpcArranger.ChangeColor(avatar, "Skin", color);
+            NPCManager.ChangeColor(avatar, "Skin", color);
 
         float redValue = Random.Range(0.1f, 0.6f);
         float greenValue = Random.Range(0.1f, 0.6f);
@@ -590,7 +740,7 @@ public class GameManager : MonoBehaviour
             human._CharacterColors.Add("Hair", color);
 
         if (avatar != null)
-            WorldAndNpcArranger.ChangeColor(avatar, "Hair", color);
+            NPCManager.ChangeColor(avatar, "Hair", color);
 
         redValue = Random.Range(0.25f, 0.6f);
         greenValue = Random.Range(0.25f, 0.6f);
@@ -606,7 +756,7 @@ public class GameManager : MonoBehaviour
             human._CharacterColors.Add("Eyes", color);
 
         if (avatar != null)
-            WorldAndNpcArranger.ChangeColor(avatar, "Eyes", color);
+            NPCManager.ChangeColor(avatar, "Eyes", color);
 
         if (avatar != null && avatar.BuildCharacterEnabled)
         {
@@ -617,18 +767,32 @@ public class GameManager : MonoBehaviour
     private void SetRandomWardrobe(Humanoid human, bool isMale)
     {
         human._WardrobeData = new List<UMATextRecipe>();
-        var list = WorldAndNpcArranger.GetRandomHair(isMale);
+        var list = NPCManager.GetRandomHair(isMale);
         foreach (UMATextRecipe recipe in list)
         {
             human.WearWardrobe(recipe);
         }
-        list = WorldAndNpcArranger.GetRandomCloth(isMale);
+        list = NPCManager.GetRandomCloth(isMale);
         foreach (UMATextRecipe recipe in list)
         {
             human.WearWardrobe(recipe);
         }
     }
 
+    public int GetStrLevel(float height, float muscle, float fat, bool isMale)
+    {
+        return Mathf.RoundToInt(MapToAnother(muscle, 0.15f, 0.75f, 0f, 18f) * 0.6f + MapToAnother(fat, 0.15f, 0.75f, 0f, 18f) * 0.1f + MapToAnother(height, 0.38f, 0.62f, 0f, 18f) * 0.3f) + (isMale ? 2 : 0);
+    }
+    public int GetAgiLevel(float height, float muscle, float fat, bool isMale)
+    {
+        return 20 - Mathf.RoundToInt(MapToAnother(muscle, 0.15f, 0.75f, 0f, 18f) * 0.1f + MapToAnother(fat, 0.15f, 0.75f, 0f, 18f) * 0.5f + MapToAnother(height, 0.38f, 0.62f, 0f, 18f) * 0.4f) - (isMale ? 2 : 0);
+    }
+    public float MapToAnother(float value, float inMin, float inMax, float outMin, float outMax)
+    {
+        value = Mathf.Clamp(value, inMin, inMax);
+        float t = Mathf.InverseLerp(inMin, inMax, value);
+        return Mathf.Lerp(outMin, outMax, t);
+    }
     public void SaveGame(int index)
     {
         if (index == Options._Instance._LoadedGamesCount)
@@ -672,7 +836,10 @@ public class GameManager : MonoBehaviour
     {
         SoundManager._Instance.PlaySound(SoundManager._Instance._Button, _ListenerObj.transform.position, 0.15f, false, UnityEngine.Random.Range(0.9f, 1.1f));
     }
-
+    public void PlayButtonSound(float vol, float pitch)
+    {
+        SoundManager._Instance.PlaySound(SoundManager._Instance._Button, _ListenerObj.transform.position, vol, false, pitch);
+    }
     public void OpenDeleteSaveScreen(int index)
     {
         GameObject.FindGameObjectWithTag("UI").transform.Find("UIMain").Find("Load").Find("DeleteSaveScreen").gameObject.SetActive(true);
@@ -764,16 +931,33 @@ public class GameManager : MonoBehaviour
     public void OpenInGameMenuScreen()
     {
         _InGameMenu.SetActive(true);
+        OpenInGameMenu(_InGameMenuNumber);
     }
     public void CloseInGameMenuScreen()
     {
         _InGameMenu.SetActive(false);
+        _AnotherInventoryList.SetActive(false);
+        _AnotherInventoryChestList.SetActive(false);
+        _AnotherInventory = null;
+        UnloadSpriteHandles();
+    }
+    private void UnloadSpriteHandles()
+    {
+        foreach (var handle in _nameToLoadedSprites)
+        {
+            if (handle.Value.IsValid())
+            {
+                handle.Value.Release();
+            }
+        }
+        _nameToLoadedSprites.Clear();
     }
     private void OpenInGameMenu(int number)
     {
         if (number == 0)
         {
             _InventoryScreen.SetActive(true);
+            UpdateInventoryUI();
         }
         else if (number == 1)
         {
@@ -902,10 +1086,295 @@ public class GameManager : MonoBehaviour
             GameObject.FindGameObjectWithTag("UI").transform.Find("UIMain").Find("StopScreen").gameObject.SetActive(true);
         }
     }
-    public void UpdateInventoryUI(Inventory anotherInventory = null)
+
+    public void TakeOrSendFromInteractMenu()
     {
+        TakeOrSendFromInteractCommon(_LastClickedSlotUI._ItemRef);
+        _InventoryItemInteractPopup.SetActive(false);
+    }
+    private void TakeOrSendFromInteractCommon(Item item)
+    {
+        bool isTake = !_LastClickedSlotUI._IsPlayerInventory;
+        if (isTake)
+            item.Take(WorldHandler._Instance._Player._Inventory);
+        else if (_AnotherInventory != null)
+            item.Take(_AnotherInventory);
+    }
+
+    public void EquipOrUnequipFromInteractMenu()
+    {
+        if (!_LastClickedSlotUI._ItemRef._ItemDefinition._CanBeEquipped) return;
+
+        bool isEquipped = _LastClickedSlotUI._ItemRef._IsEquipped;
+        if (isEquipped)
+            _LastClickedSlotUI._ItemRef.Unequip(false, true);
+        else
+            _LastClickedSlotUI._ItemRef.Equip(WorldHandler._Instance._Player._Inventory);
+
+        _InventoryItemInteractPopup.SetActive(false);
+    }
+    public void ConsumeItemFromInteractMenu()
+    {
+        if (_LastClickedSlotUI._ItemRef._ItemDefinition is ICanBeConsumed iConsumed)
+        {
+            iConsumed.Consume(_LastClickedSlotUI._ItemRef);
+            _InventoryItemInteractPopup.SetActive(false);
+        }
+    }
+    public void SplitItemFromInteractMenu()
+    {
+        if (_SplitAmount == 0) return;
+        if (_LastClickedSlotUI == null) return;
+        if (_LastClickedSlotUI._ItemRef._Count < _SplitAmount) return;
+
+        Item splitItem = _LastClickedSlotUI._ItemRef.Copy();
+        splitItem._IsSplittingBuffer = true;
+        splitItem._Count = _SplitAmount;
+        _LastClickedSlotUI._ItemRef._Count -= _SplitAmount;
+
+        TakeOrSendFromInteractCommon(splitItem);
+
+        if (_LastClickedSlotUI._ItemRef._Count == 0)
+            _LastClickedSlotUI._ItemRef.Drop(false);
+
+        _InventoryItemInteractPopup.SetActive(false);
+    }
+    public void SplitAmountArrange(float normalizedSplit)
+    {
+        if (_LastClickedSlotUI == null) return;
+
+        _SplitAmount = Mathf.RoundToInt(_LastClickedSlotUI._ItemRef._Count * normalizedSplit);
+        _InventoryItemInteractPopup.transform.Find("Split").GetComponent<Button>().interactable = _SplitAmount > 0;
+        _InventoryItemInteractPopup.transform.Find("Split").Find("SplitAmountText").GetComponent<TextMeshProUGUI>().text = _SplitAmount.ToString();
+    }
+    public void TakeAllButton(int i)
+    {
+        switch (i)
+        {
+            case 0:
+                TakeAll(_anotherInventoryChestImages);
+                break;
+            case 1:
+                TakeAll(_anotherInventoryImages);
+                break;
+            case 2:
+                TakeAll(_anotherEquipmentImages);
+                break;
+            case 3:
+                TakeAll(_anotherInventoryBackCarryImages);
+                break;
+            default:
+                break;
+        }
+    }
+    private void TakeAll(Image[] itemImages)
+    {
+        for (int i = 0; i < itemImages.Length; i++)
+        {
+            if (itemImages[i].GetComponent<InventorySlotUI>()._ItemRef != null)
+                itemImages[i].GetComponent<InventorySlotUI>()._ItemRef.Take(WorldHandler._Instance._Player._Inventory);
+        }
+    }
+
+    public void OpenAnotherInventory(Inventory anotherInv)
+    {
+        _AnotherInventory = anotherInv;
+        if (anotherInv._CanEquip)
+            _AnotherInventoryList.SetActive(true);
+        else
+            _AnotherInventoryChestList.SetActive(true);
+        StopGame(true, false);
+        OpenInGameMenuScreen();
+        OpenInGameMenu(0);
+    }
+    public void UpdateInventoryUI()
+    {
+        if (!_InventoryScreen.activeSelf) return;
+
+        _InventoryScreen.transform.Find("OwnInventory").Find("Name").GetComponentInChildren<TextMeshProUGUI>().text = WorldHandler._Instance._Player._Inventory._Name;
+        UpdateOneInventory(WorldHandler._Instance._Player._Inventory, _playerInventoryImages, _playerInventoryBackCarryImages);
+        UpdateEquipmentUI(WorldHandler._Instance._Player._Inventory, _playerEquipmentImages);
+
+        if (_AnotherInventory != null)
+        {
+
+            if (_AnotherInventory._IsHuman)
+            {
+                if (!_AnotherInventoryList.activeSelf)
+                    _AnotherInventoryList.SetActive(true);
+                if (_AnotherInventoryChestList.activeSelf)
+                    _AnotherInventoryChestList.SetActive(false);
+                _AnotherInventoryList.transform.Find("Name").GetComponentInChildren<TextMeshProUGUI>().text = _AnotherInventory._Name;
+                UpdateOneInventory(_AnotherInventory, _anotherInventoryImages, _anotherInventoryBackCarryImages);
+                UpdateEquipmentUI(_AnotherInventory, _anotherEquipmentImages);
+            }
+            else
+            {
+                if (_AnotherInventoryList.activeSelf)
+                    _AnotherInventoryList.SetActive(false);
+                if (!_AnotherInventoryChestList.activeSelf)
+                    _AnotherInventoryChestList.SetActive(true);
+                UpdateOneInventory(_AnotherInventory, _anotherInventoryChestImages, null);
+            }
+
+        }
 
     }
+    private void UpdateEquipmentUI(Inventory inventory, Image[] equipmentImages)
+    {
+        Humanoid human = inventory.GetComponent<Humanoid>();
+        if (human == null) { Debug.LogError("human is null!"); return; }
+        Item item = null;
+        for (int i = 0; i < equipmentImages.Length; i++)
+        {
+            switch (i)
+            {
+                case 0:
+                    item = human._HeadGear;
+                    break;
+                case 1:
+                    item = human._Gloves;
+                    break;
+                case 2:
+                    item = human._BackCarryItemRef;
+                    break;
+                case 3:
+                    item = human._Clothing;
+                    break;
+                case 4:
+                    item = human._ChestArmor;
+                    break;
+                case 5:
+                    item = human._LegsArmor;
+                    break;
+                case 6:
+                    item = human._Boots;
+                    break;
+                case 7:
+                    item = human._LeftHandEquippedItemRef;
+                    break;
+                case 8:
+                    item = human._RightHandEquippedItemRef;
+                    break;
+                default:
+                    Debug.LogError("unknown equipment slot!");
+                    break;
+            }
+
+            if (item == null)
+                equipmentImages[i].sprite = _equipmentSlotDefaultImages[i];
+            else
+                SetSprite(equipmentImages[i], item._ItemDefinition._Name);
+
+            SetDurability(equipmentImages[i], item);
+        }
+    }
+    private void UpdateOneInventory(Inventory inventory, Image[] ownItemImageComponents, Image[] carryingInventoryItemImageComponents)
+    {
+        int itemCount = inventory._Items.Count;
+        for (int i = 0; i < ownItemImageComponents.Length; i++)
+        {
+            if (i >= itemCount)
+            {
+                ownItemImageComponents[i].GetComponent<InventorySlotUI>()._ItemRef = null;
+                ownItemImageComponents[i].sprite = PrefabHolder._Instance._EmptyItemBackground;
+                ownItemImageComponents[i].transform.Find("Count").gameObject.SetActive(false);
+                ownItemImageComponents[i].transform.Find("DurabilityBackground").gameObject.SetActive(false);
+            }
+            else
+            {
+                ownItemImageComponents[i].GetComponent<InventorySlotUI>()._ItemRef = inventory._Items[i];
+                ownItemImageComponents[i].sprite = PrefabHolder._Instance._LoadingAdressableProcessSprite;
+                int iForAction = i;
+                SetSprite(ownItemImageComponents[iForAction], inventory._Items[iForAction]._ItemDefinition._Name);
+                SetDurability(ownItemImageComponents[iForAction], inventory._Items[iForAction]);
+            }
+        }
+        if (!inventory._CanEquip) { }
+        else if (inventory.GetComponent<Humanoid>()._BackCarryItemRef == null)
+        {
+            carryingInventoryItemImageComponents[0].transform.parent.GetComponent<Image>().color = new Color(1f, 1f, 1f, 0.07f);
+            carryingInventoryItemImageComponents[0].transform.parent.parent.Find("BackCarryFrame").GetComponent<Image>().color = new Color(1f, 1f, 1f, 0.07f);
+            for (int i = 0; i < carryingInventoryItemImageComponents.Length; i++)
+            {
+                carryingInventoryItemImageComponents[i].color = new Color(1f, 1f, 1f, 0.07f);
+                carryingInventoryItemImageComponents[i].GetComponent<InventorySlotUI>()._ItemRef = null;
+                carryingInventoryItemImageComponents[i].sprite = PrefabHolder._Instance._EmptyItemBackground;
+                carryingInventoryItemImageComponents[i].transform.Find("Count").gameObject.SetActive(false);
+                carryingInventoryItemImageComponents[i].transform.Find("DurabilityBackground").gameObject.SetActive(false);
+            }
+        }
+        else
+        {
+            itemCount = (inventory.GetComponent<Humanoid>()._BackCarryItemRef as IHaveInventory)._Inventory._Items.Count;
+
+            carryingInventoryItemImageComponents[0].transform.parent.GetComponent<Image>().color = new Color(1f, 1f, 1f, 1f);
+            carryingInventoryItemImageComponents[0].transform.parent.parent.Find("BackCarryFrame").GetComponent<Image>().color = new Color(1f, 1f, 1f, 0.8f);
+            for (int i = 0; i < carryingInventoryItemImageComponents.Length; i++)
+            {
+                carryingInventoryItemImageComponents[i].color = new Color(1f, 1f, 1f, 1f);
+                if (i >= itemCount)
+                {
+                    carryingInventoryItemImageComponents[i].GetComponent<InventorySlotUI>()._ItemRef = null;
+                    carryingInventoryItemImageComponents[i].sprite = PrefabHolder._Instance._EmptyItemBackground;
+                    carryingInventoryItemImageComponents[i].transform.Find("Count").gameObject.SetActive(false);
+                    carryingInventoryItemImageComponents[i].transform.Find("DurabilityBackground").gameObject.SetActive(false);
+                }
+                else
+                {
+                    carryingInventoryItemImageComponents[i].GetComponent<InventorySlotUI>()._ItemRef = inventory._Items[i];
+                    carryingInventoryItemImageComponents[i].sprite = PrefabHolder._Instance._LoadingAdressableProcessSprite;
+                    int iForAction = i;
+                    SetSprite(carryingInventoryItemImageComponents[iForAction], inventory._Items[iForAction]._ItemDefinition._Name);
+                    SetDurability(carryingInventoryItemImageComponents[iForAction], inventory._Items[iForAction]);
+                }
+            }
+        }
+    }
+    private void SetDurability(Image image, Item item)
+    {
+        if (item == null)
+        {
+            if (image.transform.Find("Count") != null)
+                image.transform.Find("Count").gameObject.SetActive(false);
+            image.transform.Find("DurabilityBackground").gameObject.SetActive(false);
+            return;
+        }
+
+        if (item is IHaveItemDurability)
+        {
+            image.transform.Find("Count").gameObject.SetActive(false);
+            image.transform.Find("DurabilityBackground").gameObject.SetActive(true);
+            float normalizedDurability = (item as IHaveItemDurability)._Durability / (item as IHaveItemDurability)._DurabilityMax;
+            image.transform.Find("DurabilityBackground").Find("Durability").GetComponent<Image>().color = GetDurabilityColor(normalizedDurability);
+            image.transform.Find("DurabilityBackground").Find("Durability").GetComponent<RectTransform>().localScale = new Vector3(normalizedDurability, 1f, 1f);
+        }
+        else
+        {
+            image.transform.Find("DurabilityBackground").gameObject.SetActive(false);
+            image.transform.Find("Count").gameObject.SetActive(true);
+            image.transform.Find("Count").GetComponent<TextMeshProUGUI>().text = item._Count.ToString();
+        }
+    }
+    private void SetSprite(Image image, string itemName)
+    {
+        if (!_nameToLoadedSprites.ContainsKey(itemName))
+        {
+            var handle = _ItemNameToSprite[itemName].LoadAssetAsync();
+            handle.Completed += (handle) => { if (!handle.IsValid()) return; image.sprite = handle.Result; };
+            _nameToLoadedSprites.Add(itemName, handle);
+        }
+        else
+        {
+            if (_nameToLoadedSprites[itemName].IsDone)
+                image.sprite = _nameToLoadedSprites[itemName].Result;
+            else
+            {
+                _nameToLoadedSprites[itemName].Completed += (handle) => { if (!handle.IsValid()) return; image.sprite = handle.Result; };
+            }
+        }
+    }
+
     private Color GetDurabilityColor(float normalizedDurability)
     {
         if (normalizedDurability < 0.5f)

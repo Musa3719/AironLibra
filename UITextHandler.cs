@@ -53,10 +53,10 @@ public class UITextHandler : MonoBehaviour
         _text.color = new Color(_text.color.r, _text.color.g, _text.color.b, 0f);
 
         float startTime = Time.realtimeSinceStartup;
-        while (startTime + 0.75f > Time.realtimeSinceStartup)
+        while (startTime + 1f > Time.realtimeSinceStartup)
         {
             _rectTransform.anchoredPosition = new Vector2(Mathf.Lerp(_rectTransform.anchoredPosition.x, _firstXPos, Time.unscaledDeltaTime * 7f), _rectTransform.anchoredPosition.y);
-            _text.color = new Color(_text.color.r, _text.color.g, _text.color.b, Mathf.Lerp(_text.color.a, 1f, Time.unscaledDeltaTime * 3.25f));
+            _text.color = new Color(_text.color.r, _text.color.g, _text.color.b, Mathf.MoveTowards(_text.color.a, 1f, Time.unscaledDeltaTime * 2f));
             yield return null;
         }
 

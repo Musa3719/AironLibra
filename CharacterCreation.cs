@@ -9,6 +9,10 @@ public class CharacterCreation : MonoBehaviour
 {
     public static CharacterCreation _Instance;
 
+    private float _startCoinAmount;
+    private float _muscleLevel;
+    private float _fatLevel;
+    private float _heightLevel;
     private bool _isMale;
     private GameObject _myCam;
     private GameObject _uI;
@@ -18,6 +22,7 @@ public class CharacterCreation : MonoBehaviour
     private GameObject _beardSelection;
     private DynamicCharacterAvatar _charPreview;
     private Button _confirmButton;
+    private TextMeshProUGUI _coinAmountText;
     private Button _chooseHairButton;
     private Button _chooseBeardButton;
     private int _lastDnaMenu;
@@ -27,17 +32,18 @@ public class CharacterCreation : MonoBehaviour
     private GameObject _firstDnaMenu;
     private GameObject _secondDnaMenu;
     private GameObject _thirdDnaMenu;
-
     public void Init()
     {
         _Instance = this;
         _isMale = true;
+
         _myCam = transform.Find("Cam").gameObject;
         _colorSelection = transform.Find("Canvas").Find("FlexibleColorPicker").gameObject;
         _maleHairSelection = transform.Find("Canvas").Find("MaleHairSelection").gameObject;
         _femaleHairSelection = transform.Find("Canvas").Find("FemaleHairSelection").gameObject;
         _beardSelection = transform.Find("Canvas").Find("BeardSelection").gameObject;
         _confirmButton = transform.Find("Canvas").Find("ConfirmButton").GetComponent<Button>();
+        _coinAmountText = transform.Find("Canvas").Find("CoinAmount").GetComponentInChildren<TextMeshProUGUI>();
         _chooseHairButton = transform.Find("Canvas").Find("ChooseHairButton").GetComponent<Button>();
         _chooseBeardButton = transform.Find("Canvas").Find("ChooseBeardButton").GetComponent<Button>();
         _charPreview = transform.Find("CharacterPreview").GetComponent<DynamicCharacterAvatar>();
@@ -49,31 +55,6 @@ public class CharacterCreation : MonoBehaviour
         _thirdDnaMenu = transform.Find("Canvas").Find("DNA").Find("OtherDnaSliders").gameObject;
 
         _confirmButton.interactable = false;
-
-        SliderArrange(transform.Find("Canvas").Find("DNA").Find("BodyDnaSliders"));
-        SliderArrange(transform.Find("Canvas").Find("DNA").Find("FaceDnaSliders"));
-        SliderArrange(transform.Find("Canvas").Find("DNA").Find("OtherDnaSliders"));
-    }
-    private void SliderArrange(Transform parent)
-    {
-        Slider slider;
-        foreach (Transform child in parent)
-        {
-            slider = child.GetComponent<Slider>();
-            if (slider == null) continue;
-            string name = slider.gameObject.name;
-            slider.onValueChanged.AddListener((float value) => SetDna(name, value));
-        }
-    }
-    private void SliderRandomize(Transform parent)
-    {
-        Slider slider;
-        foreach (Transform child in parent)
-        {
-            slider = child.GetComponent<Slider>();
-            if (slider == null) continue;
-            slider.value = Random.Range(slider.minValue, slider.maxValue);
-        }
     }
     private void OnEnable()
     {
@@ -83,6 +64,10 @@ public class CharacterCreation : MonoBehaviour
             Gaia.ProceduralWorldsGlobalWeather.Instance.transform.parent.gameObject.SetActive(false);
         _uI = GameObject.FindGameObjectWithTag("UI").transform.Find("UIMain").gameObject;
         _uI.SetActive(false);
+
+        SliderArrange(transform.Find("Canvas").Find("DNA").Find("BodyDnaSliders"));
+        SliderArrange(transform.Find("Canvas").Find("DNA").Find("FaceDnaSliders"));
+        SliderArrange(transform.Find("Canvas").Find("DNA").Find("OtherDnaSliders"));
     }
     private void OnDisable()
     {
@@ -101,6 +86,65 @@ public class CharacterCreation : MonoBehaviour
             EmptyButton();
     }
 
+    private void SliderArrange(Transform parent)
+    {
+        Slider slider;
+        foreach (Transform child in parent)
+        {
+            slider = child.GetComponent<Slider>();
+            if (slider == null) continue;
+            string name = slider.gameObject.name;
+            if (name == "Muscle")
+            {
+                _muscleLevel = slider.value;
+                slider.onValueChanged.AddListener((float value) => { _muscleLevel = value; SetDna("upperMuscle", value); SetDna("lowerMuscle", value); SetDna("armWidth", value); SetDna("forearmWidth", value); if (_isMale) SetDna("bodyFitness", value); RecalculateLevels(); RecalculateStartCoin(); RecalculateHeadSize(); });
+            }
+            else if (name == "Fat")
+            {
+                _fatLevel = slider.value;
+                slider.onValueChanged.AddListener((float value) => { _fatLevel = value; SetDna("upperWeight", value); SetDna("lowerWeight", value); SetDna("belly", value); SetDna("waist", value); RecalculateLevels(); RecalculateStartCoin(); RecalculateHeadSize(); });
+            }
+            else if (name == "height")
+            {
+                _heightLevel = slider.value;
+                slider.onValueChanged.AddListener((float value) => { _heightLevel = value; SetDna("height", value); RecalculateLevels(); });
+            }
+            else
+                slider.onValueChanged.AddListener((float value) => SetDna(name, value));
+
+            float temp = slider.value;
+            slider.value = 0f;
+            slider.value = temp;
+        }
+    }
+    private void RecalculateLevels()
+    {
+        _firstDnaMenu.transform.Find("Info").Find("StrengthText").GetComponent<TextMeshProUGUI>().text = GameManager._Instance.GetStrLevel(_heightLevel, _muscleLevel, _fatLevel, _isMale).ToString();
+        _firstDnaMenu.transform.Find("Info").Find("AgilityText").GetComponent<TextMeshProUGUI>().text = GameManager._Instance.GetAgiLevel(_heightLevel, _muscleLevel, _fatLevel, _isMale).ToString();
+    }
+    private void RecalculateHeadSize()
+    {
+        float headSize = 0.41f + (_fatLevel * 1.5f + _muscleLevel) * 0.1f;
+        float neckSize = (_fatLevel / 2f) + (_muscleLevel / 2f);
+        SetDna("headSize", headSize);
+        SetDna("neckThickness", neckSize);
+    }
+    private void RecalculateStartCoin()
+    {
+        _startCoinAmount = Mathf.RoundToInt(((0.6f - _muscleLevel) + (_fatLevel - 0.2f)) * 70f);
+        _coinAmountText.text = _startCoinAmount.ToString();
+    }
+    private void SliderRandomize(Transform parent)
+    {
+        Slider slider;
+        foreach (Transform child in parent)
+        {
+            slider = child.GetComponent<Slider>();
+            if (slider == null) continue;
+            slider.value = Random.Range(slider.minValue, slider.maxValue);
+        }
+    }
+    
     public void SetName(string name)
     {
         SaveSystemHandler._Instance._PlayerNameCreation = name;
@@ -121,7 +165,7 @@ public class CharacterCreation : MonoBehaviour
         Color skin = _charPreview.GetColor("Skin").color;
         Color hair = _charPreview.GetColor("Hair").color;
         Color eyes = _charPreview.GetColor("Eyes").color;
-        WorldAndNpcArranger.SetGender(_charPreview, isMale);
+        NPCManager.SetGender(_charPreview, isMale);
         _charPreview.SetColorValue("Skin", skin);
         _charPreview.SetColorValue("Hair", hair);
         _charPreview.SetColorValue("Eyes", eyes);
@@ -130,30 +174,13 @@ public class CharacterCreation : MonoBehaviour
         if (isMale)
         {
             _chooseBeardButton.interactable = true;
-            Transform sliderObj = transform.Find("Canvas").Find("DNA").Find("BodyDnaSliders").Find("breastCleavage");
-            if (sliderObj != null)
-            {
-                sliderObj.name = "bodyFitness";
-                sliderObj.parent.Find("TextChangable").GetComponent<TextMeshProUGUI>().text = Localization._Instance._UI[65];
-                sliderObj.GetComponent<Slider>().onValueChanged.RemoveAllListeners();
-                sliderObj.GetComponent<Slider>().value = _charPreview.GetDNA()["bodyFitness"].Value;
-                sliderObj.GetComponent<Slider>().onValueChanged.AddListener((float value) => SetDna("bodyFitness", value));
-            }
         }
         else
         {
             _chooseBeardButton.interactable = false;
-            Transform sliderObj = transform.Find("Canvas").Find("DNA").Find("BodyDnaSliders").Find("bodyFitness");
-            if (sliderObj != null)
-            {
-                sliderObj.name = "breastCleavage";
-                sliderObj.parent.Find("TextChangable").GetComponent<TextMeshProUGUI>().text = Localization._Instance._UI[66];
-                sliderObj.GetComponent<Slider>().onValueChanged.RemoveAllListeners();
-                sliderObj.GetComponent<Slider>().value = _charPreview.GetDNA()["breastCleavage"].Value;
-                sliderObj.GetComponent<Slider>().onValueChanged.AddListener((float value) => SetDna("breastCleavage", value));
-            }
         }
 
+        RecalculateLevels();
         BuildChar();
     }
 
@@ -222,7 +249,6 @@ public class CharacterCreation : MonoBehaviour
     public void OpenColorSelection(int colorNumber)
     {
         EmptyButton();
-        _colorSelection.GetComponent<RectTransform>().anchoredPosition = new Vector2(_colorSelection.GetComponent<RectTransform>().anchoredPosition.x, -52f - colorNumber * 48f);
         _colorSelection.GetComponent<FlexibleColorPicker>().onColorChange.RemoveAllListeners();
 
         Color color;

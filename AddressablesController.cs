@@ -5,17 +5,25 @@ using UnityEngine.ResourceManagement.AsyncOperations;
 
 public class AddressablesController : MonoBehaviour
 {
+    #region Prefabs
     [SerializeField] private AssetReferenceGameObject _treePrefab;
+    #region Items
 
+    public AssetReferenceGameObject _AppleItem;
+    public AssetReferenceSprite _AppleSprite;
 
+    #endregion
+    #endregion
     public static AddressablesController _Instance;
     public bool[,] _IsChunkLoadedToScene { get; private set; }
     public List<AsyncOperationHandle<GameObject>>[,] _HandlesForSpawned { get; private set; }
     public List<GameObject>[,] _NpcListForChunk { get; private set; }
-    
+
     #region Method Parameters For Optimization
     private List<AssetReferenceGameObject> _objectsWillBeSpawned;
+    private List<Transform> _objectsParentForSpawn;
     private List<Vector3> _objectPositionsWillBeSpawned;
+    private List<Vector3> _objectRotationsWillBeSpawned;
     #endregion
 
     private void Awake()
@@ -69,9 +77,9 @@ public class AddressablesController : MonoBehaviour
                     GameObject obj = handle.Result;
                     if (obj != null)
                     {
-                        obj.SetActive(false); 
+                        obj.SetActive(false);
                     }
-                    Addressables.ReleaseInstance(h); 
+                    Addressables.ReleaseInstance(h);
                 };
             }
         }
@@ -91,22 +99,30 @@ public class AddressablesController : MonoBehaviour
     {
         _objectsWillBeSpawned = GameManager._Instance._ObjectsInChunk[x, y];
         _objectPositionsWillBeSpawned = GameManager._Instance._ObjectPositionsInChunk[x, y];
+        _objectRotationsWillBeSpawned = GameManager._Instance._ObjectRotationsInChunk[x, y];
+        _objectsParentForSpawn = GameManager._Instance._ObjectParentsInChunk[x, y];
     }
     private void SpawnObj(int x, int y, int i)
     {
         if (_HandlesForSpawned[x, y] == null)
             _HandlesForSpawned[x, y] = new List<AsyncOperationHandle<GameObject>>();
 
-        Vector3 pos = _objectPositionsWillBeSpawned[i]; //for action buffer
-        _objectsWillBeSpawned[i].InstantiateAsync().Completed += (handle) =>
-        {
-            if (handle.Status != AsyncOperationStatus.Succeeded) return;
-            GameObject obj = handle.Result;
-            obj.transform.position = pos;
-            GameManager._Instance.SetTerrainLinks(obj);
-            _HandlesForSpawned[x, y].Add(handle);
-            handle.Result.GetComponent<CarriableObject>()._Handle = handle;
-            handle.Result.GetComponent<CarriableObject>()._Chunk = new Vector2Int(x, y);
+        Vector3 pos = _objectPositionsWillBeSpawned[i]; //for action buffer(array chances)
+        Vector3 angles = _objectRotationsWillBeSpawned[i]; //for action buffer(array chances)
+        Transform parentTransform = _objectsParentForSpawn[i]; //for action buffer(array chances)
+        _objectsWillBeSpawned[i].InstantiateAsync(pos, Quaternion.Euler(angles), parentTransform).Completed += (handle) =>
+         {
+             if (handle.Status != AsyncOperationStatus.Succeeded) return;
+             GameObject obj = handle.Result;
+             GameManager._Instance.SetTerrainLinks(obj);
+             _HandlesForSpawned[x, y].Add(handle);
+             handle.Result.GetComponent<CarriableObject>()._Handle = handle;
+             handle.Result.GetComponent<CarriableObject>()._Chunk = new Vector2Int(x, y);
+
+            //if (handle.Result.CompareTag("InventoryHolder"))
+            //LoadInventoryHolderData(handle.Result);
+            //if (handle.Result.CompareTag("Plant"))
+            //LoadPlantData(handle.Result);
         };
     }
 
