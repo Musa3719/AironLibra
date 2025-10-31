@@ -35,15 +35,28 @@ public abstract class Humanoid : MonoBehaviour, ICanGetHurt
     public MovementState _MovementState { get; protected set; }
     public HandState _HandState { get; protected set; }
 
+    public float _MuscleLevel { get; set; }
+    public float _FatLevel { get; set; }
+
     //public Characteristic _Characteristic { get; private set; }
 
-    public EquippableItem _HandEquippedItemRef;
-    public ArmorItem _HeadArmor { get { return _headArmor; } set { _headArmor = value; } }
-    private ArmorItem _headArmor;
-    public ArmorItem _UpperBodyArmor { get { return _upperBodyArmor; } set { _upperBodyArmor = value; } }
-    private ArmorItem _upperBodyArmor;
-    public ArmorItem _LowerBodyArmor { get { return _lowerBodyArmor; } set { _lowerBodyArmor = value; } }
-    private ArmorItem _lowerBodyArmor;
+    #region Equippables
+    public Item _RightHandEquippedItemRef;
+    public Item _LeftHandEquippedItemRef;
+    public Item _BackCarryItemRef;
+    public Item _HeadGear { get { return _headGear; } set { _headGear = value; } }
+    private Item _headGear;
+    public Item _Gloves { get { return _gloves; } set { _gloves = value; } }
+    private Item _gloves;
+    public Item _Clothing { get { return _clothing; } set { _clothing = value; } }
+    private Item _clothing;
+    public ArmorItem _ChestArmor { get { return _chestArmor; } set { _chestArmor = value; } }
+    private ArmorItem _chestArmor;
+    public ArmorItem _LegsArmor { get { return _legsArmor; } set { _legsArmor = value; } }
+    private ArmorItem _legsArmor;
+    public Item _Boots { get { return _boots; } set { _boots = value; } }
+    private Item _boots;
+    #endregion
 
     public float _SizeMultiplier { get; private set; }
     public virtual Vector2 _DirectionInput { get; }
@@ -92,13 +105,14 @@ public abstract class Humanoid : MonoBehaviour, ICanGetHurt
 
     protected virtual void Awake()
     {
+        _Inventory = GetComponent<Inventory>();
         _LocomotionSystem = GetComponentInChildren<LocomotionSystem>();
         _FootIKComponent = _LocomotionSystem.GetComponentInChildren<csHomebrewIK>();
         _LeaninganimatorComponent = _LocomotionSystem.GetComponentInChildren<LeaningAnimator>();
         _UmaDynamicAvatar = _LocomotionSystem.transform.Find("char").GetComponent<DynamicCharacterAvatar>();
         _ExpressionPlayer = _UmaDynamicAvatar.GetComponent<UMA.PoseTools.ExpressionPlayer>();
         if (_UmaDynamicAvatar != null)
-            WorldAndNpcArranger.SetGender(_UmaDynamicAvatar, _IsMale);
+            NPCManager.SetGender(_UmaDynamicAvatar, _IsMale);
         InitOrLoadUmaCharacter();
         _checkForSnowThreshold = Random.Range(0.85f, 1f);
     }
@@ -163,7 +177,7 @@ public abstract class Humanoid : MonoBehaviour, ICanGetHurt
 
         _umaWaitingForCompletion = false;
         _SizeMultiplier = (_headTransform.position.y - transform.position.y) / 1.77f;
-        ChangeShader();
+        //ChangeShader();
         if (GetComponentInChildren<csHomebrewIK>() != null)
             GetComponentInChildren<csHomebrewIK>().StartForUma();
         _UmaDynamicAvatar.BuildCharacterEnabled = true;
@@ -171,6 +185,7 @@ public abstract class Humanoid : MonoBehaviour, ICanGetHurt
         GameManager._Instance.CallForAction(() =>
         {
             _animator = _LocomotionSystem.GetComponentInChildren<Animator>(); _animator.updateMode = AnimatorUpdateMode.Fixed; _animator.cullingMode = AnimatorCullingMode.CullCompletely; _Rigidbody.freezeRotation = true;
+            _animator.speed = GetDnaValueByName("height") <= 0.5f ? 0.77f + (0.9f - 0.77f) * (GetDnaValueByName("height") / 0.5f) : 0.9f + (1.25f - 0.9f) * ((GetDnaValueByName("height") - 0.5f) / 0.5f);
         }, 0.1f);
     }
 
@@ -254,7 +269,7 @@ public abstract class Humanoid : MonoBehaviour, ICanGetHurt
     {
         if (this is NPC && _UmaDynamicAvatar.BuildCharacterEnabled) return;
 
-        WorldAndNpcArranger.SetGender(_UmaDynamicAvatar, _IsMale);
+        NPCManager.SetGender(_UmaDynamicAvatar, _IsMale);
         SetDna(true);
         SetWardrobe();
 
@@ -262,7 +277,7 @@ public abstract class Humanoid : MonoBehaviour, ICanGetHurt
         {
             foreach (var color in _CharacterColors)
             {
-                WorldAndNpcArranger.ChangeColor(_UmaDynamicAvatar, color.Key, color.Value);
+                NPCManager.ChangeColor(_UmaDynamicAvatar, color.Key, color.Value);
             }
         }
 
@@ -354,95 +369,60 @@ public abstract class Humanoid : MonoBehaviour, ICanGetHurt
             _UmaDynamicAvatar.BuildCharacterEnabled = true;
         }
     }
+    public float GetDnaValueByName(string dnaName)
+    {
+        if (_UmaDynamicAvatar == null) return -1f;
+
+        var values = _UmaDynamicAvatar.GetDNAValues();
+        if (values.ContainsKey(dnaName))
+            return values[dnaName];
+        return -1f;
+    }
     public void ChangeMuscleAmount(bool isIncreasing, int amount = 1, bool isRebuilding = true)
     {
-        string muscleName = "armWidth";
-        float newAmount = _DnaData[muscleName];
-        if (isIncreasing)
-            newAmount += 0.0125f * amount;
-        else
-            newAmount -= 0.0125f * amount;
-        newAmount = Mathf.Clamp01(newAmount);
-        WorldAndNpcArranger.ChangeDna(_DnaData, this, muscleName, newAmount, false);
-
-        muscleName = "forearmWidth";
-        newAmount = _DnaData[muscleName];
-        if (isIncreasing)
-            newAmount += 0.0125f * amount;
-        else
-            newAmount -= 0.0125f * amount;
-        newAmount = Mathf.Clamp01(newAmount);
-        WorldAndNpcArranger.ChangeDna(_DnaData, this, muscleName, newAmount, false);
-
-        muscleName = "upperMuscle";
-        newAmount = _DnaData[muscleName];
+        float newAmount = _MuscleLevel;
         if (isIncreasing)
             newAmount += 0.025f * amount;
         else
             newAmount -= 0.025f * amount;
-        newAmount = Mathf.Clamp01(newAmount);
-        WorldAndNpcArranger.ChangeDna(_DnaData, this, muscleName, newAmount, false);
+        newAmount = Mathf.Clamp(newAmount, 0.15f, 0.75f);
+        _MuscleLevel = newAmount;
 
-        muscleName = "lowerMuscle";
-        newAmount = _DnaData[muscleName];
-        if (isIncreasing)
-            newAmount += 0.025f * amount;
-        else
-            newAmount -= 0.025f * amount;
-        newAmount = Mathf.Clamp01(newAmount);
-        WorldAndNpcArranger.ChangeDna(_DnaData, this, muscleName, newAmount, isRebuilding);
+        SetLevelsToAvatar();
     }
-    public void ChangeWeightAmount(bool isIncreasing, int amount = 1, bool isRebuilding = true)
+    public void ChangeFatAmount(bool isIncreasing, int amount = 1, bool isRebuilding = true)
     {
-        string muscleName = "armWidth";
-        float newAmount = _DnaData[muscleName];
-        if (isIncreasing)
-            newAmount += 0.0125f * amount;
-        else
-            newAmount -= 0.0125f * amount;
-        newAmount = Mathf.Clamp01(newAmount);
-        WorldAndNpcArranger.ChangeDna(_DnaData, this, muscleName, newAmount, false);
-
-        muscleName = "forearmWidth";
-        newAmount = _DnaData[muscleName];
-        if (isIncreasing)
-            newAmount += 0.0125f * amount;
-        else
-            newAmount -= 0.0125f * amount;
-        newAmount = Mathf.Clamp01(newAmount);
-        WorldAndNpcArranger.ChangeDna(_DnaData, this, muscleName, newAmount, false);
-
-        muscleName = "upperWeight";
-        newAmount = _DnaData[muscleName];
+        float newAmount = _FatLevel;
         if (isIncreasing)
             newAmount += 0.025f * amount;
         else
             newAmount -= 0.025f * amount;
-        newAmount = Mathf.Clamp01(newAmount);
-        WorldAndNpcArranger.ChangeDna(_DnaData, this, muscleName, newAmount, false);
+        newAmount = Mathf.Clamp(newAmount, 0.15f, 0.75f);
+        _FatLevel = newAmount;
 
-        muscleName = "lowerWeight";
-        newAmount = _DnaData[muscleName];
-        if (isIncreasing)
-            newAmount += 0.025f * amount;
-        else
-            newAmount -= 0.025f * amount;
-        newAmount = Mathf.Clamp01(newAmount);
-        WorldAndNpcArranger.ChangeDna(_DnaData, this, muscleName, newAmount, false);
-
-        muscleName = "belly";
-        newAmount = _DnaData[muscleName];
-        if (isIncreasing)
-            newAmount += 0.025f * amount;
-        else
-            newAmount -= 0.025f * amount;
-        newAmount = Mathf.Clamp01(newAmount);
-        WorldAndNpcArranger.ChangeDna(_DnaData, this, muscleName, newAmount, isRebuilding);
+        SetLevelsToAvatar();
     }
+    public void SetLevelsToAvatar()
+    {
+        _DnaData["armWidth"] = _MuscleLevel;
+        _DnaData["forearmWidth"] = _MuscleLevel;
+        _DnaData["upperMuscle"] = _MuscleLevel;
+        _DnaData["lowerMuscle"] = _MuscleLevel;
+
+        if (_IsMale)
+            _DnaData["bodyFitness"] = _MuscleLevel;
+
+        _DnaData["upperWeight"] = _MuscleLevel;
+        _DnaData["lowerWeight"] = _MuscleLevel;
+        _DnaData["belly"] = _MuscleLevel;
+        _DnaData["lowerMuscle"] = _MuscleLevel;
+    }
+    
 
     public void SetDna(bool isRebuilding)
     {
         if (_DnaData == null || _UmaDynamicAvatar == null) return;
+
 
         _DNA = _UmaDynamicAvatar.GetDNA();
         foreach (var item in _DNA.Keys)
@@ -481,6 +461,7 @@ public abstract class Humanoid : MonoBehaviour, ICanGetHurt
             if (umaMaterials[i].shader.name.StartsWith("UMA/Diffuse_Normal_Metallic"))
             {
                 Texture temp = umaMaterials[i].GetTexture("_BaseMap");
+
                 umaMaterials[i].shader = PrefabHolder._Instance._Pw_URP_Shared.shader;
                 umaMaterials[i].enableInstancing = true;
                 umaMaterials[i].EnableKeyword("_PW_SF_COVER_ON");
@@ -497,6 +478,11 @@ public abstract class Humanoid : MonoBehaviour, ICanGetHurt
                 umaMaterials[i].SetFloat("_PW_CoverLayer1Smoothness", 0.3f);
                 umaMaterials[i].SetFloat("_PW_CoverLayer1FadeStart", -100f);
                 umaMaterials[i].SetTexture("_MainTex", temp);
+
+                /*temp = umaMaterials[i].GetTexture("_MainTex");
+                if (temp == null) GameObject.Find("TestImage").transform.GetChild(i).Find("TestText").GetComponent<TMPro.TextMeshProUGUI>().text = i.ToString() + "error";
+                else GameObject.Find("TestImage").transform.GetChild(i).Find("TestText").GetComponent<TMPro.TextMeshProUGUI>().text = i.ToString() + " " + temp.width + " " + temp.height;
+                GameObject.Find("TestImage").transform.GetChild(i).GetComponent<UnityEngine.UI.Image>().sprite = GameManager._Instance.TextureToSprite(temp);*/
             }
         }
         _UmaDynamicAvatar.transform.Find("UMARenderer").GetComponent<SkinnedMeshRenderer>().sharedMaterials = umaMaterials;

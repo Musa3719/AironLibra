@@ -299,7 +299,7 @@ public class Swim : MovementState
     public void FixedUpdate()
     {
         _human._IsGrounded = true;
-        float targetYVel = (WorldHandler._Instance._SeaLevel - 1.35f - _human.transform.position.y) * 7.5f;
+        float targetYVel = (WorldHandler._Instance._SeaLevel - 1.5f - _human.transform.position.y) * 7.5f;
         _human._Rigidbody.linearVelocity = new Vector3(_human._Rigidbody.linearVelocity.x, Mathf.Lerp(_human._Rigidbody.linearVelocity.y, targetYVel, Time.deltaTime * 3f), _human._Rigidbody.linearVelocity.z);
         MovementStateMethods.ControlLocomotionType(_human);     // handle the controller locomotion type and movespeed
         MovementStateMethods.ControlRotationType(_human, 4f);       // handle the controller rotation type*/

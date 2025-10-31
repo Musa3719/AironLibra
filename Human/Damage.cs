@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using UnityEngine;
 
 public enum DamageType { Cut, Crush, Pierce }
-public enum DamagePart { Head, UpperBody, LowerBody }
+public enum DamagePart { Head, Hands, Chest, Legs, Feet }
 public class Damage
 {
     public DamageType _DamageType;
@@ -24,9 +24,11 @@ public class Damage
         Damage calculatedDamage = new Damage();
         calculatedDamage.Init(_DamageType, _DamagePart, _Amount);
 
-        if (calculatedDamage._DamagePart == DamagePart.Head) calculatedDamage._TargetArmor = target._HeadArmor;
-        if (calculatedDamage._DamagePart == DamagePart.UpperBody) calculatedDamage._TargetArmor = target._UpperBodyArmor;
-        if (calculatedDamage._DamagePart == DamagePart.LowerBody) calculatedDamage._TargetArmor = target._LowerBodyArmor;
+        if (calculatedDamage._DamagePart == DamagePart.Head) calculatedDamage._TargetArmor = target._HeadGear as ArmorItem;
+        if (calculatedDamage._DamagePart == DamagePart.Hands) calculatedDamage._TargetArmor = target._Gloves as ArmorItem;
+        if (calculatedDamage._DamagePart == DamagePart.Chest) calculatedDamage._TargetArmor = target._ChestArmor;
+        if (calculatedDamage._DamagePart == DamagePart.Legs) calculatedDamage._TargetArmor = target._LegsArmor;
+        if (calculatedDamage._DamagePart == DamagePart.Feet) calculatedDamage._TargetArmor = target._Boots as ArmorItem;
         if (calculatedDamage._TargetArmor != null)
         {
             if (!calculatedDamage._TargetArmor._IsSteel)
@@ -39,7 +41,7 @@ public class Damage
                 if (GameManager._Instance.RandomPercentageChance(calculatedDamage._TargetArmor._Durability))
                     calculatedDamage._Amount = 0f;
             }
-               
+
         }
         calculatedDamage._AmountBlocked = _Amount - calculatedDamage._Amount;
 
@@ -53,9 +55,11 @@ public class Damage
 }
 public interface ICanGetHurt
 {
-    public ArmorItem _HeadArmor { get; set; }
-    public ArmorItem _UpperBodyArmor { get; set; }
-    public ArmorItem _LowerBodyArmor { get; set; }
+    public Item _HeadGear { get; set; }
+    public Item _Gloves { get; set; }
+    public ArmorItem _ChestArmor { get; set; }
+    public ArmorItem _LegsArmor { get; set; }
+    public Item _Boots { get; set; }
     public void TakeDamage(Damage damage);
     public void Die();
 }

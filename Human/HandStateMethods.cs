@@ -11,7 +11,7 @@ public static class HandStateMethods
             if (CameraController._Instance._IsInCoolAngleMod)
                 pl._LookAtForCam.transform.position = pl.transform.position + Vector3.up;
             else
-                pl._LookAtForCam.transform.position = Vector3.Lerp(pl._LookAtForCam.transform.position, pl.transform.position + Vector3.up + pl._Rigidbody.linearVelocity * 1.75f * CameraController._Instance._CameraDistance / 12f, Time.deltaTime * 5f);
+                pl._LookAtForCam.transform.position = Vector3.Lerp(pl._LookAtForCam.transform.position, pl.transform.position + Vector3.up + pl._Rigidbody.linearVelocity * CameraController._Instance._CameraDistance / 40f, Time.deltaTime * 5f);
         }
         else
         {
@@ -22,8 +22,8 @@ public static class HandStateMethods
                 {
                     Vector3 distance = pl._RayFoLook.point - pl.transform.position;
                     distance.y = 0f;
-                    distance = Vector3.ClampMagnitude(distance, 5f);
-                    distance = distance * CameraController._Instance._CameraDistance / 12f;
+                    distance = Vector3.ClampMagnitude(distance, 2f);
+                    distance = distance * CameraController._Instance._CameraDistance / 40f;
                     if (CameraController._Instance._IsInCoolAngleMod)
                         distance = Vector3.ClampMagnitude(distance, 1.5f);
                     Vector3 targetPos = pl.transform.position + distance + Vector3.up;
@@ -37,14 +37,16 @@ public static class HandStateMethods
                     pl._LastLookVectorForGamepad = newVector;
                 if (pl._LastLookVectorForGamepad.magnitude > 1f)
                     pl._LastLookVectorForGamepad.Normalize();
-                Vector3 distance = 5f * GameManager._Instance.Vector2ToVector3(pl._LastLookVectorForGamepad);
-                distance *= CameraController._Instance._CameraDistance / 12f;
+                Vector3 distance = 2f * GameManager._Instance.Vector2ToVector3(pl._LastLookVectorForGamepad);
+                distance *= CameraController._Instance._CameraDistance / 40f;
                 if (CameraController._Instance._IsInCoolAngleMod)
                     distance = Vector3.ClampMagnitude(distance, 1.5f);
                 Vector3 targetPos = pl.transform.position + distance + Vector3.up;
                 pl._LookAtForCam.transform.position = targetPos;
             }
         }
+
+        if (pl._LastJumpedTime + 0.85f > Time.time) { pl._LookAtForCam.transform.position = new Vector3(pl._LookAtForCam.position.x, pl._LastJumpedPosition.y, pl._LookAtForCam.position.z); return; }
     }
 
     public static void CheckAttack(Humanoid human)
@@ -69,15 +71,17 @@ public static class HandStateMethods
 
     public static bool CheckForEmptyState(Humanoid human)
     {
-        return !human._IsInCombatMode && human._HandEquippedItemRef == null;
+        return !human._IsInCombatMode && human._RightHandEquippedItemRef == null && human._LeftHandEquippedItemRef == null;
     }
     public static bool CheckForCarryState(Humanoid human)
     {
-        return human._HandEquippedItemRef != null && human._HandEquippedItemRef._IsBig && !(human._HandEquippedItemRef is WeaponItem);
+        return (human._RightHandEquippedItemRef != null && human._RightHandEquippedItemRef._ItemDefinition._IsBig && !(human._RightHandEquippedItemRef is WeaponItem)) ||
+            (human._LeftHandEquippedItemRef != null && human._LeftHandEquippedItemRef._ItemDefinition._IsBig && !(human._LeftHandEquippedItemRef is WeaponItem));
     }
 
     public static bool CheckForWeaponState(Humanoid human)
     {
-        return human._IsInCombatMode && human._HandEquippedItemRef != null && human._HandEquippedItemRef is WeaponItem;
+        if (CheckForCarryState(human)) return false;
+        return human._IsInCombatMode && ((human._RightHandEquippedItemRef != null && human._RightHandEquippedItemRef is WeaponItem) || (human._LeftHandEquippedItemRef != null && human._LeftHandEquippedItemRef is WeaponItem));
     }
 }

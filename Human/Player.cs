@@ -22,6 +22,9 @@ public class Player : Humanoid
 
     public Coroutine _JumpCoroutine;
     public Coroutine _AttackCoroutine;
+
+    public float _LastJumpedTime { get; set; }
+    public Vector3 _LastJumpedPosition { get; set; }
     #endregion
 
 
@@ -29,21 +32,24 @@ public class Player : Humanoid
     {
         //_IsMale = true;/////////
         _Rigidbody = GetComponent<Rigidbody>();
+        //_MainCollider = transform.Find("MainCollider").GetComponent<CapsuleCollider>();
         _MainCollider = transform.Find("char").Find("Root").Find("Global").Find("Position").Find("Hips").Find("MainCollider").GetComponent<CapsuleCollider>();
         base.Awake();
         _PlayerInputController = new PlayerInputController(this);
+        _LastJumpedTime = -2f;
     }
 
     protected override void Start()
     {
         base.Start();
-        WorldHandler._Instance._Player.GetComponent<Humanoid>().DisableHumanData();
-        WorldHandler._Instance._Player.GetComponent<Humanoid>().EnableHumanData();
+        DisableHumanData();
+        EnableHumanData();
+        _VerticalInput = 1f;
     }
     protected override void Update()
     {
         if (GameManager._Instance._IsGameStopped) return;
-            base.Update();
+        base.Update();
         _PlayerInputController.ArrangeInput(_LocomotionSystem);
     }
 
@@ -60,6 +66,10 @@ public class PlayerInputController
 
     public void ArrangeInput(LocomotionSystem locomotionSystem)
     {
+        if (M_Input.GetButtonDown("Interact"))
+        {
+            CheckForNearInventories();
+        }
         if (M_Input.GetButtonDown("Jump"))
         {
             GameManager._Instance.CoroutineCall(ref _player._JumpCoroutine, JumpBufferCoroutine(), _player);
@@ -117,6 +127,28 @@ public class PlayerInputController
         _player._AttackBuffer = true;
         yield return new WaitForSeconds(0.225f);
         _player._AttackBuffer = false;
+    }
+
+
+    private void CheckForNearInventories()
+    {
+        Inventory nearestInventory = null;
+        float nearestDistance = 0f;
+        Collider[] colliders = Physics.OverlapSphere(_player.transform.position, 1f);
+        foreach (var collider in colliders)
+        {
+            if (collider != null && collider.transform.parent != null && collider.transform.parent.TryGetComponent(out Inventory anotherInventory))
+            {
+                if (nearestInventory == null || nearestDistance > (collider.transform.position - _player.transform.position).magnitude)
+                {
+                    nearestDistance = (collider.transform.position - _player.transform.position).magnitude;
+                    nearestInventory = anotherInventory;
+                }
+            }
+        }
+
+        if (nearestInventory != null)
+            GameManager._Instance.OpenAnotherInventory(nearestInventory);
     }
 
 }

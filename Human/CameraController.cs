@@ -20,10 +20,10 @@ public class CameraController : MonoBehaviour
     private void Awake()
     {
         _Instance = this;
-        _realCameraDistance = 10f;
+        _realCameraDistance = 11f;
         _CameraDistance = _realCameraDistance;
-        _maxDistance = 14f;
-        _minDistance = 7f;
+        _maxDistance = 15f;
+        _minDistance = 8f;
     }
     private void Start()
     {
@@ -69,7 +69,7 @@ public class CameraController : MonoBehaviour
             float newX = Mathf.Cos(_rad) * radius;
             float newZ = Mathf.Sin(_rad) * radius;
 
-            Vector3 tempVector = new Vector3(newX, 0f, newZ).normalized;
+            Vector3 tempVector = new Vector3(newX, 0f, newZ);
             tempVector.y = _FollowOffset.y;
             _FollowOffset = tempVector;
         }
@@ -89,9 +89,9 @@ public class CameraController : MonoBehaviour
         lerpSpeed = (WorldHandler._Instance._Player._LookAtForCam.position - transform.position).magnitude > _CameraDistance * 2f ? 6f : lerpSpeed;
         if (_IsInCoolAngleMod)
             lerpSpeed = 10f;
-        Vector3 realFollowOffset = new Vector3(_FollowOffset.x, _IsInCoolAngleMod ? _FollowOffset.y / 1.6f : _FollowOffset.y, _FollowOffset.z);
-        transform.position = Vector3.Lerp(transform.position, WorldHandler._Instance._Player._LookAtForCam.position + realFollowOffset * _CameraDistance * (_IsInCoolAngleMod ? 0.6f : 1f), Time.deltaTime * lerpSpeed);
-        Vector3 targetAngles = new Vector3(_IsInCoolAngleMod ? 30f : 45f, Mathf.Atan2(_FollowOffset.x, _FollowOffset.z) * Mathf.Rad2Deg + 180f, 0f);
+        Vector3 realFollowOffset = new Vector3(_FollowOffset.x, _IsInCoolAngleMod ? 0.15f : _FollowOffset.y, _FollowOffset.z);
+        transform.position = Vector3.Lerp(transform.position, WorldHandler._Instance._Player._LookAtForCam.position + realFollowOffset * (_IsInCoolAngleMod ? _CameraDistance * 2.5f : _CameraDistance) * (_IsInCoolAngleMod ? 0.6f : 1f), Time.deltaTime * lerpSpeed);
+        Vector3 targetAngles = new Vector3(_IsInCoolAngleMod ? 15f : 60f, Mathf.Atan2(_FollowOffset.x, _FollowOffset.z) * Mathf.Rad2Deg + 180f, 0f);
         Quaternion targetRotation = Quaternion.Euler(targetAngles.x, targetAngles.y, targetAngles.z);
         transform.rotation = Quaternion.Lerp(transform.rotation, targetRotation, Time.deltaTime * lerpSpeed);
     }

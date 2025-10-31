@@ -90,13 +90,25 @@ public static class MovementStateMethods
                 return;
             }
 
-            //get the right-facing direction of the referenceTransform
             Vector3 right = referenceTransform.right;
             right.y = 0;
-            //get the forward direction relative to referenceTransform Right
             Vector3 forward = Quaternion.AngleAxis(-90, Vector3.up) * right;
-            Vector3 up = human._MovementState is Prone ? human.transform.forward : Vector3.zero;
-            // determine the direction the player will face based on input and the referenceTransform's right and forward directions
+            Vector3 up = Vector3.zero;
+            if (human._MovementState is Prone)
+            {
+                up = human.transform.forward;
+            }
+            else if (human._MovementState is Locomotion)
+            {
+                float slopeAngle = Mathf.Acos(human._LocomotionSystem.groundHit.normal.y) * Mathf.Rad2Deg;
+                float slopeFactor = Mathf.Clamp(slopeAngle / 15f, 0f, 3f);
+                Vector3 slopeDir = Vector3.ProjectOnPlane(Vector3.down, human._LocomotionSystem.groundHit.normal).normalized;
+                Vector3 inputDir = (human._LocomotionSystem.inputSmooth.x * right) + (human._LocomotionSystem.inputSmooth.y * forward);
+                Vector3 moveDirFlat = Vector3.ProjectOnPlane(inputDir, Vector3.up).normalized;
+                slopeFactor = Vector3.Dot(moveDirFlat, slopeDir) < 0f ? slopeFactor : 0f;
+                up = slopeFactor * Vector3.up * 0.35f;
+            }
+
             human._LocomotionSystem.moveDirection = (human._LocomotionSystem.inputSmooth.x * right) + (human._LocomotionSystem.inputSmooth.y * forward) + new Vector3(0f, up.y, 0f);
         }
         else if (human is NPC npc)
@@ -107,7 +119,23 @@ public static class MovementStateMethods
                 npc._LocomotionSystem.moveDirection = Vector3.Lerp(npc._LocomotionSystem.moveDirection, Vector3.zero, (npc._IsStrafing ? npc._LocomotionSystem.AimingMovementSetting.movementSmooth : npc._LocomotionSystem.FreeMovementSetting.movementSmooth) * Time.deltaTime);
                 return;
             }
-            npc._LocomotionSystem.moveDirection = new Vector3(GameManager._Instance.Vector2ToVector3(npc._DirectionInput).normalized.x, 0f, GameManager._Instance.Vector2ToVector3(npc._DirectionInput).normalized.z);
+            Vector3 up = Vector3.zero;
+            if (human._MovementState is Prone)
+            {
+                up = human.transform.forward;
+            }
+            else if (human._MovementState is Locomotion)
+            {
+                float slopeAngle = Mathf.Acos(human._LocomotionSystem.groundHit.normal.y) * Mathf.Rad2Deg;
+                float slopeFactor = Mathf.Clamp(slopeAngle / 15f, 0f, 3f);
+                Vector3 slopeDir = Vector3.ProjectOnPlane(Vector3.down, human._LocomotionSystem.groundHit.normal).normalized;
+                Vector3 inputDir = (npc._DirectionInput.x * Vector3.right) + (npc._DirectionInput.y * Vector3.forward);
+                Vector3 moveDirFlat = Vector3.ProjectOnPlane(inputDir, Vector3.up).normalized;
+                slopeFactor = Vector3.Dot(moveDirFlat, slopeDir) < 0f ? slopeFactor : 0f;
+                up = slopeFactor * Vector3.up * 0.5f;
+            }
+
+            npc._LocomotionSystem.moveDirection = new Vector3(GameManager._Instance.Vector2ToVector3(npc._DirectionInput).normalized.x, up.y, GameManager._Instance.Vector2ToVector3(npc._DirectionInput).normalized.z);
         }
     }
 
@@ -161,7 +189,7 @@ public static class MovementStateMethods
             return;
         }
 
-         sprintConditions = player._DirectionInput.sqrMagnitude > 0.1f && CanRunWithStamina(player) && player._IsGrounded && IsMovingForward(player) && player._MovementState is Locomotion;
+        sprintConditions = player._DirectionInput.sqrMagnitude > 0.1f && CanRunWithStamina(player) && player._IsGrounded && IsMovingForward(player) && player._MovementState is Locomotion;
 
         if ((sprintInput || runInput) && sprintConditions)
         {
@@ -245,6 +273,8 @@ public static class MovementStateMethods
 
     private static void Jump(Humanoid human)
     {
+        if (human is Player pl) { pl._LastJumpedPosition = pl._LookAtForCam.position; pl._LastJumpedTime = Time.time; }
+
         // trigger jump behaviour
         human._JumpCounter = human._JumpTimer;
         human._IsJumping = true;
@@ -299,7 +329,7 @@ public static class MovementStateMethods
         human._Rigidbody.linearVelocity = Vector3.Lerp(human._Rigidbody.linearVelocity, targetVelocity, human._LocomotionSystem.airSmooth * Time.fixedDeltaTime);
     }
 
-   
+
 
     #endregion
 
@@ -387,7 +417,7 @@ public static class MovementStateMethods
         return groundAngle;
     }
 
-    
+
 
     #endregion
 
@@ -401,6 +431,8 @@ public static class MovementStateMethods
         else
             targetSpeed = human._IsSprinting ? speed.sprintSpeed : speed.runningSpeed;
 
+        if (human._MovementState is Swim && human._IsSprinting) targetSpeed *= 0.8f;
+
         float lerpMultiplier = (human._LocomotionSystem.moveSpeed > targetSpeed) ? 1.5f : 1f;
         human._LocomotionSystem.moveSpeed = Mathf.MoveTowards(human._LocomotionSystem.moveSpeed, targetSpeed, speed.movementSmooth * lerpMultiplier * Time.fixedDeltaTime);
     }
@@ -411,7 +443,13 @@ public static class MovementStateMethods
 
         if (!human._IsGrounded || human._IsJumping) return;
 
-        //direction.y = 0;
+        float yVel = human._Rigidbody.linearVelocity.y;
+        if (human._MovementState is Locomotion)
+        {
+            yVel = direction.y;
+            direction.y = 0;
+        }
+
         direction.x = Mathf.Clamp(direction.x, -1f, 1f);
         direction.z = Mathf.Clamp(direction.z, -1f, 1f);
         if (direction.magnitude > 1f)
@@ -420,7 +458,7 @@ public static class MovementStateMethods
         Vector3 targetVelocity = direction * (human._StopMove ? 0 : human._LocomotionSystem.moveSpeed * human._LocomotionSystem.MovementSpeedMultiplier);
 
         bool useVerticalVelocity = !(human._MovementState is Prone);
-        if (useVerticalVelocity) targetVelocity.y = human._Rigidbody.linearVelocity.y;
+        if (useVerticalVelocity) targetVelocity.y = yVel;
         human._Rigidbody.linearVelocity = targetVelocity;
     }
 
@@ -452,7 +490,7 @@ public static class MovementStateMethods
         human._StopMove = false;
     }
 
-    
+
 
     private static void RotateToDirection(Vector3 direction, Humanoid human, float speed = 0f)
     {

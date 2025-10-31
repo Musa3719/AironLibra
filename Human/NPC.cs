@@ -26,7 +26,7 @@ public class NPC : Humanoid
     private float _cliffCheckForwardForDir;
     private float _cliffCheckForwardForVel;
     private float _tryToCreatePathTimer;
-    private float _tryToCreatePathThreshold = 0.5f;
+    private float _tryToCreatePathThreshold = 1f;
     public Vector3 _MoveTargetPosition { get; set; }
     public Vector3 _AimPosition { get; set; }
     public bool _IsOnLinkMovement { get; private set; }
@@ -80,10 +80,7 @@ public class NPC : Humanoid
 
         if (_UmaDynamicAvatar != null)
         {
-            //disable inputs
-            _JumpInput = false;
-            _CrouchInput = false;
-            _InteractInput = false;
+            DisableInputs();
 
             ArrangePath();
             ArrangeDirection();
@@ -100,9 +97,9 @@ public class NPC : Humanoid
         if (M_Input.GetKeyDown(KeyCode.Alpha2))
             ChangeMuscleAmount(true);
         if (M_Input.GetKeyDown(KeyCode.Alpha3))
-            ChangeWeightAmount(false);
+            ChangeFatAmount(false);
         if (M_Input.GetKeyDown(KeyCode.Alpha4))
-            ChangeWeightAmount(true);
+            ChangeFatAmount(true);
         if (M_Input.GetKeyDown(KeyCode.F))
             _IsMale = true;
         //WorldAndNpcCreation.SetGender(_UmaDynamicAvatar, Random.Range(0, 2) == 0);
@@ -116,6 +113,12 @@ public class NPC : Humanoid
         else
             _SprintInput = false;
 
+    }
+    public void DisableInputs()
+    {
+        _JumpInput = false;
+        _CrouchInput = false;
+        _InteractInput = false;
     }
     public void SpawnNPCChild()
     {
@@ -136,6 +139,7 @@ public class NPC : Humanoid
 
         if (_ChangeShaderCompleted)
         {
+            if (!transform.GetChild(0).name.StartsWith("NPC")) Debug.LogError("0 index child is not NPC!");
             _TargetPoolNPC = transform.GetChild(0).gameObject;
             GameManager._Instance._NPCPool.GameObjectToPool(transform.GetChild(0).gameObject);
         }
@@ -144,6 +148,7 @@ public class NPC : Humanoid
 
         _Rigidbody.isKinematic = true;
         _Rigidbody.Sleep();
+        DisableInputs();
         this.enabled = false;
     }
     private void ArrangeDirection()
@@ -185,7 +190,7 @@ public class NPC : Humanoid
                 if ((_stuckArrangingPosition - new Vector3(transform.position.x, 0f, transform.position.z)).magnitude < 0.2f)
                 {
                     Vector3 target = _MoveTargetPosition;
-                    Stop();
+                    Stop(true);
                     ArrangeNewMovementTarget(target);
                 }
 
@@ -221,7 +226,7 @@ public class NPC : Humanoid
             if (isStopping)
             {
                 Vector3 target = _MoveTargetPosition;
-                Stop();
+                Stop(true);
                 ArrangeNewMovementTarget(target);
                 return;
             }
@@ -268,14 +273,15 @@ public class NPC : Humanoid
         if (conditions)
             _IsInCombatMode = false;
     }
-    public void Stop()
+    public void Stop(bool willRetry = false)
     {
         _cornersFromPath.Clear();
-        _MoveTargetPosition = transform.position;
         _LastCornerFromPath = transform.position;
         _directionInputFromPath = Vector2.zero;
         _directionCurrent = Vector2.zero;
         _isPathEnded = true;
+        if (!willRetry)
+            _MoveTargetPosition = transform.position;
     }
     public void ArrangeNewMovementTarget(Vector3 targetPos)
     {
@@ -283,6 +289,8 @@ public class NPC : Humanoid
     }
     private void ArrangePath()
     {
+        if (Vector3.Distance(_MoveTargetPosition, transform.position) < 0.5f) return;
+
         if (!_isPathEnded)
         {
             if (_tryToCreatePathTimer < _tryToCreatePathThreshold)
@@ -308,8 +316,15 @@ public class NPC : Humanoid
         _isPathEnded = false;
         _cornersFromPath.Clear();
         _nextPositionCheckCounter = 1f;
+        if ((_CurrentPath.corners.Length <= 1 || Vector3.Distance(_CurrentPath.corners[0], _CurrentPath.corners[1]) < 0.5f) && Vector3.Distance(transform.position, segmentatedTarget) > 0.5f)
+        {
+            _CurrentPath.ClearCorners();
+            _cornersFromPath.Add(transform.position);
+            _cornersFromPath.Add(segmentatedTarget);
+        }
         foreach (var corner in _CurrentPath.corners)
         {
+            //var a = new GameObject(); a.transform.position = corner;
             _cornersFromPath.Add(corner);
         }
         if (_cornersFromPath.Count > 1)

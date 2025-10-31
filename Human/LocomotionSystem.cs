@@ -18,8 +18,8 @@ public class LocomotionSystem : MonoBehaviour
     #region Speed                
 
     public const float AnimatorWalkSpeedDefault = 0.4f;
-    public const float AnimatorRunningSpeedDefault = 0.7f;
-    public const float AnimatorSprintSpeedDefault = 1f;
+    public const float AnimatorRunningSpeedDefault = 0.5f;
+    public const float AnimatorSprintSpeedDefault = 0.7f;
 
     [HideInInspector] public float AnimatorMaxSpeedMultiplier = 1f;
     [HideInInspector] public float MovementSpeedMultiplier => MovementSpeedMultiplierMoveState * MovementSpeedMultiplierHandState * MovementSpeedMultiplierHealthState;
