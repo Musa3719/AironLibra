@@ -21,18 +21,18 @@ public interface MovementState : IState
 /// Contains Idle, Walk, Run, Sprint, Jump
 /// </summary>
 
-public class Locomotion : MovementState
+public class LocomotionState : MovementState
 {
     public Humanoid _Human => _human;
     private Humanoid _human;
     private float _stateChangeCounter;
-    public Locomotion(Humanoid human)
+    public LocomotionState(Humanoid human)
     {
         this._human = human;
     }
     public void EnterState(MovementState oldState)
     {
-        float animChangeTime = (oldState is Swim) ? 0.65f : 0.2f;
+        float animChangeTime = (oldState is SwimMoveState) ? 0.65f : 0.2f;
         _stateChangeCounter = 0.1f;
         _human._LocomotionSystem._defaultCollider.enabled = true;
         _human.ChangeAnimation("Free Locomotion", animChangeTime);
@@ -44,14 +44,20 @@ public class Locomotion : MovementState
     public void ExitState(MovementState newState)
     {
         _human._LocomotionSystem._defaultCollider.enabled = false;
-        _human._IsInCombatMode = false;
+        _human.DisableCombatMode();
     }
     public void DoState()
     {
+        if (_human._HealthSystem._IsUnconscious)
+        {
+            _human.EnterState(new UnconsciousMoveState(_human, _human._HealthSystem._LastHitForce, _human._HealthSystem._LastHitBoneName, _human._HealthSystem._LastHitDir));
+            return;
+        }
+
         //Check For State Change
         if (MovementStateMethods.IsInDeepWater(_human))
         {
-            _human.EnterState(new Swim(_human));
+            _human.EnterState(new SwimMoveState(_human));
             return;
         }
 
@@ -61,18 +67,19 @@ public class Locomotion : MovementState
         {
             if (_human._CrouchInput && !_human._IsJumping && _human._IsGrounded && !_Human._IsInCombatMode)
             {
-                _human.EnterState(new Crouch(_human));
+                _human.EnterState(new CrouchMoveState(_human));
                 return;
             }
         }
 
-        if (!_human._FootIKComponent.enabled && _human._Animator.avatar != null && _human._IsGrounded && Options._Instance._IsFootIKEnabled)
+        if (!_human._FootIKComponent.enabled && _human._Animator.avatar != null && Options._Instance._IsFootIKEnabled)
             _human._FootIKComponent.enabled = true;
-        else if ((!Options._Instance._IsFootIKEnabled || _human._Animator.avatar == null || !_human._IsGrounded) && _human._FootIKComponent.enabled)
+        else if ((!Options._Instance._IsFootIKEnabled || _human._Animator.avatar == null) && _human._FootIKComponent.enabled)
             _human._FootIKComponent.enabled = false;
 
 
         MovementStateMethods.UpdateMoveDirection(_human, GameManager._Instance._MainCamera.transform);
+        MovementStateMethods.CheckDodge(_human);
         MovementStateMethods.CheckJump(_human);
         MovementStateMethods.CheckSprint(_human);
         MovementStateMethods.UpdateAnimator(_human);
@@ -88,14 +95,14 @@ public class Locomotion : MovementState
     }
 }
 
-public class Crouch : MovementState
+public class CrouchMoveState : MovementState
 {
     public Humanoid _Human => _human;
     private Humanoid _human;
 
     private float _stateChangeCounter;
     private float _waitForMoveAfterProne;
-    public Crouch(Humanoid human)
+    public CrouchMoveState(Humanoid human)
     {
         this._human = human;
     }
@@ -105,15 +112,14 @@ public class Crouch : MovementState
         _human._LocomotionSystem._crouchCollider.SetActive(true);
         _human._IsSprinting = false;
 
-        if (oldState is Prone)
-            _human.ChangeAnimation("ProneToCrouch");
-        else
-            _human.ChangeAnimation("Crouch");
 
-        if (oldState is Prone)
+        if (oldState is ProneMoveState)
             _waitForMoveAfterProne = 0.75f;
         else
+        {
+            _human.ChangeAnimation("Crouch");
             _human._LocomotionSystem.MovementSpeedMultiplierMoveState = 0.9f;
+        }
 
         if (_human._Animator.avatar != null && Options._Instance._IsFootIKEnabled)
             _human._FootIKComponent.enabled = true;
@@ -121,21 +127,31 @@ public class Crouch : MovementState
 
     public void ExitState(MovementState newState)
     {
+        _human.ChangeAnimation("EmptyArms");
         _human._LocomotionSystem._crouchCollider.SetActive(false);
     }
     public void DoState()
     {
+        if (_human._HealthSystem._IsUnconscious)
+        {
+            _human.EnterState(new UnconsciousMoveState(_human, _human._HealthSystem._LastHitForce, _human._HealthSystem._LastHitBoneName, _human._HealthSystem._LastHitDir));
+            return;
+        }
+
         if (_waitForMoveAfterProne > 0f)
         {
             _human._LocomotionSystem.MovementSpeedMultiplierMoveState = 0f;
             _waitForMoveAfterProne -= Time.deltaTime;
             if (_waitForMoveAfterProne <= 0f)
+            {
+                _human.ChangeAnimation("Crouch");
                 _human._LocomotionSystem.MovementSpeedMultiplierMoveState = 0.9f;
+            }
         }
         //Check For State Change
         if (MovementStateMethods.IsInDeepWater(_human))
         {
-            _human.EnterState(new Locomotion(_human));
+            _human.EnterState(new LocomotionState(_human));
             return;
         }
 
@@ -147,20 +163,20 @@ public class Crouch : MovementState
             {
                 if (_human is Player)
                     GameManager._Instance.BufferActivated(ref WorldHandler._Instance._Player._JumpBuffer, WorldHandler._Instance._Player, ref WorldHandler._Instance._Player._JumpCoroutine);
-                _human.EnterState(new Locomotion(_human));
+                _human.EnterState(new LocomotionState(_human));
                 return;
             }
             else if (_human._CrouchInput && !_Human._IsInCombatMode)
             {
-                _human.EnterState(new Prone(_human));
+                _human.EnterState(new ProneMoveState(_human));
                 return;
             }
         }
 
 
-        if (!_human._FootIKComponent.enabled && _human._Animator.avatar != null && _human._IsGrounded && Options._Instance._IsFootIKEnabled)
+        if (!_human._FootIKComponent.enabled && _human._Animator.avatar != null && Options._Instance._IsFootIKEnabled)
             _human._FootIKComponent.enabled = true;
-        else if ((!Options._Instance._IsFootIKEnabled || _human._Animator.avatar == null || !_human._IsGrounded) && _human._FootIKComponent.enabled)
+        else if ((!Options._Instance._IsFootIKEnabled || _human._Animator.avatar == null) && _human._FootIKComponent.enabled)
             _human._FootIKComponent.enabled = false;
 
         if (_stateChangeCounter > 0f)
@@ -180,13 +196,13 @@ public class Crouch : MovementState
         MovementStateMethods.ControlRotationType(_human);       // handle the controller rotation type*/
     }
 }
-public class Prone : MovementState
+public class ProneMoveState : MovementState
 {
     public Humanoid _Human => _human;
     private Humanoid _human;
 
     private float _stateChangeCounter;
-    public Prone(Humanoid human)
+    public ProneMoveState(Humanoid human)
     {
         this._human = human;
     }
@@ -196,25 +212,32 @@ public class Prone : MovementState
         _human._LocomotionSystem._proneCollider.SetActive(true);
         _human._IsSprinting = false;
 
-        if (oldState is Crouch)
+        if (oldState is CrouchMoveState)
             _human.ChangeAnimation("CrouchToProne");
         else
             _human.ChangeAnimation("Prone");
 
-        _human._LocomotionSystem.MovementSpeedMultiplierMoveState = 0.5f;
+        _human._LocomotionSystem.MovementSpeedMultiplierMoveState = 0.8f;
         _human._FootIKComponent.enabled = false;
     }
 
     public void ExitState(MovementState newState)
     {
         _human._LocomotionSystem._proneCollider.SetActive(false);
+        _human.ChangeAnimation("ProneToCrouch");
     }
     public void DoState()
     {
+        if (_human._HealthSystem._IsUnconscious)
+        {
+            _human.EnterState(new UnconsciousMoveState(_human, _human._HealthSystem._LastHitForce, _human._HealthSystem._LastHitBoneName, _human._HealthSystem._LastHitDir));
+            return;
+        }
+
         //Check For State Change
         if (MovementStateMethods.IsInDeepWater(_human))
         {
-            _human.EnterState(new Locomotion(_human));
+            _human.EnterState(new LocomotionState(_human));
             return;
         }
 
@@ -226,7 +249,7 @@ public class Prone : MovementState
             {
                 if (_human is Player)
                     GameManager._Instance.BufferActivated(ref WorldHandler._Instance._Player._JumpBuffer, WorldHandler._Instance._Player, ref WorldHandler._Instance._Player._JumpCoroutine);
-                _human.EnterState(new Crouch(_human));
+                _human.EnterState(new CrouchMoveState(_human));
                 return;
             }
         }
@@ -247,13 +270,13 @@ public class Prone : MovementState
         MovementStateMethods.ControlRotationType(_human);       // handle the controller rotation type*/
     }
 }
-public class Swim : MovementState
+public class SwimMoveState : MovementState
 {
     public Humanoid _Human => _human;
     private Humanoid _human;
     private float _stateChangeCounter;
     private bool _isSwimAnimForward;
-    public Swim(Humanoid human)
+    public SwimMoveState(Humanoid human)
     {
         this._human = human;
     }
@@ -275,10 +298,16 @@ public class Swim : MovementState
     }
     public void DoState()
     {
+        if (_human._HealthSystem._IsUnconscious)
+        {
+            _human.EnterState(new UnconsciousMoveState(_human, _human._HealthSystem._LastHitForce, _human._HealthSystem._LastHitBoneName, _human._HealthSystem._LastHitDir));
+            return;
+        }
+
         //Check For State Change
         if (!MovementStateMethods.IsInDeepWater(_human))
         {
-            _human.EnterState(new Locomotion(_human));
+            _human.EnterState(new LocomotionState(_human));
             return;
         }
 
@@ -299,18 +328,19 @@ public class Swim : MovementState
     public void FixedUpdate()
     {
         _human._IsGrounded = true;
-        float targetYVel = (WorldHandler._Instance._SeaLevel - 1.5f - _human.transform.position.y) * 7.5f;
-        _human._Rigidbody.linearVelocity = new Vector3(_human._Rigidbody.linearVelocity.x, Mathf.Lerp(_human._Rigidbody.linearVelocity.y, targetYVel, Time.deltaTime * 3f), _human._Rigidbody.linearVelocity.z);
         MovementStateMethods.ControlLocomotionType(_human);     // handle the controller locomotion type and movespeed
         MovementStateMethods.ControlRotationType(_human, 4f);       // handle the controller rotation type*/
+
+        float targetYVel = (WorldHandler._Instance._SeaLevel - 1.5f - _human.transform.position.y) * 7.5f;
+        _human._Rigidbody.linearVelocity = new Vector3(_human._Rigidbody.linearVelocity.x, Mathf.Lerp(_human._Rigidbody.linearVelocity.y, targetYVel, Time.deltaTime * 3f), _human._Rigidbody.linearVelocity.z);
     }
 }
 
-public class Sit : MovementState
+public class SitMoveState : MovementState
 {
     public Humanoid _Human => _human;
     private Humanoid _human;
-    public Sit(Humanoid human)
+    public SitMoveState(Humanoid human)
     {
         this._human = human;
     }
@@ -325,18 +355,22 @@ public class Sit : MovementState
     }
     public void DoState()
     {
-
+        if (_human._HealthSystem._IsUnconscious)
+        {
+            _human.EnterState(new UnconsciousMoveState(_human, _human._HealthSystem._LastHitForce, _human._HealthSystem._LastHitBoneName, _human._HealthSystem._LastHitDir));
+            return;
+        }
     }
     public void FixedUpdate()
     {
 
     }
 }
-public class Rest : MovementState
+public class RestMoveState : MovementState
 {
     public Humanoid _Human => _human;
     private Humanoid _human;
-    public Rest(Humanoid human)
+    public RestMoveState(Humanoid human)
     {
         this._human = human;
     }
@@ -351,11 +385,163 @@ public class Rest : MovementState
     }
     public void DoState()
     {
-
+        if (_human._HealthSystem._IsUnconscious)
+        {
+            _human.EnterState(new UnconsciousMoveState(_human, _human._HealthSystem._LastHitForce, _human._HealthSystem._LastHitBoneName, _human._HealthSystem._LastHitDir));
+            return;
+        }
     }
     public void FixedUpdate()
     {
 
+    }
+}
+public class UnconsciousMoveState : MovementState
+{
+    public Humanoid _Human => _human;
+    private Humanoid _human;
+
+    private Coroutine _getUpCoroutine;
+    private bool _isGettingUp;
+
+    private Vector3 _hitVelocity;
+    private string _hitBoneName;
+    private Vector3 _hitPos;
+    public UnconsciousMoveState(Humanoid human, Vector3 hitVel, string hitBoneName, Vector3 hitPos)
+    {
+        _human = human;
+        _hitVelocity = hitVel;
+        _hitBoneName = hitBoneName;
+        _hitPos = hitPos;
+    }
+    public void EnterState(MovementState oldState)
+    {
+        _human._Animator.enabled = false;
+        _human.DisableHumanAdditionals();
+        Vector3 currentVel = _human._Rigidbody.linearVelocity;
+        _human._Rigidbody.isKinematic = true;
+        _human._Rigidbody.Sleep();
+        _human._RagdollAvatar.EnableRagdoll(currentVel, _hitVelocity, _hitBoneName, _hitPos);
+        if (_human._RightHandEquippedItemRef != null)
+            _human._RightHandEquippedItemRef.Unequip(true, false);
+        if (_human._LeftHandEquippedItemRef != null)
+            _human._LeftHandEquippedItemRef.Unequip(true, false);
+    }
+
+    public void ExitState(MovementState newState)
+    {
+        if (_getUpCoroutine != null)
+            GameManager._Instance.StopCoroutine(_getUpCoroutine);
+    }
+    public void DoState()
+    {
+        if (!_human._HealthSystem._IsUnconscious && !_isGettingUp)
+        {
+            _isGettingUp = true;
+            _human._RagdollAvatar.DisableRagdoll();
+
+            GameManager._Instance.CoroutineCall(ref _getUpCoroutine, GetUpCoroutine(), _human);
+        }
+        _human._LocomotionSystem.UpdateAnimator();
+    }
+    public void FixedUpdate()
+    {
+
+    }
+    private IEnumerator GetUpCoroutine()
+    {
+        float startTime = Time.time;
+        List<Transform> ragdollBones = _human._RagdollAvatar._Bones;
+        Animator animator = _human._Animator;
+
+
+        bool faceUp = Vector3.Dot(
+            _human._LocomotionSystem.transform.Find("char/Root/Global/Position/Hips").forward,
+            Vector3.up
+        ) > 0;
+        string animName = faceUp ? "GetUpFromFront" : "GetUpFromBack";
+        AnimationClip getUpClip = null;
+        foreach (var clip in animator.runtimeAnimatorController.animationClips)
+        {
+            if (clip.name == animName)
+            {
+                getUpClip = clip;
+                break;
+            }
+        }
+
+        if (getUpClip == null)
+        {
+            Debug.LogError("GetUp clip bulunamadý: " + animName);
+            yield break;
+        }
+
+        var startPos = new Vector3[ragdollBones.Count];
+        var startRot = new Quaternion[ragdollBones.Count];
+        for (int i = 0; i < ragdollBones.Count; i++)
+        {
+            startPos[i] = ragdollBones[i].localPosition;
+            startRot[i] = ragdollBones[i].localRotation;
+        }
+
+        animator.enabled = true;
+        getUpClip.SampleAnimation(animator.gameObject, 0f);
+
+        var targetPos = new Vector3[ragdollBones.Count];
+        var targetRot = new Quaternion[ragdollBones.Count];
+        for (int i = 0; i < ragdollBones.Count; i++)
+        {
+            targetPos[i] = ragdollBones[i].localPosition;
+            targetRot[i] = ragdollBones[i].localRotation;
+        }
+
+        for (int i = 0; i < ragdollBones.Count; i++)
+        {
+            ragdollBones[i].localPosition = startPos[i];
+            ragdollBones[i].localRotation = startRot[i];
+        }
+        animator.enabled = false;
+
+        float t = 0f;
+        float duration = 0.5f;
+        bool isHipArranged = false;
+        while (t < 1f)
+        {
+            t += Time.deltaTime / duration;
+            for (int i = 0; i < ragdollBones.Count; i++)
+            {
+                if (ragdollBones[i].name == "Hips") { if (!isHipArranged) { isHipArranged = true; ArrangeHumanoidToHips(ragdollBones[i], targetPos[i], targetRot[i]); } continue; }
+                ragdollBones[i].localPosition = Vector3.Lerp(startPos[i], targetPos[i], t);
+                ragdollBones[i].localRotation = Quaternion.Slerp(startRot[i], targetRot[i], t);
+            }
+            yield return null;
+        }
+
+        animator.enabled = true;
+        _human._Animator.Play(animName);
+
+        while (startTime + 1.5f > Time.time)
+            yield return null;
+
+        _human.EnterState(new LocomotionState(_human));
+        _human._Rigidbody.isKinematic = false;
+        _human._Rigidbody.WakeUp();
+    }
+    private void ArrangeHumanoidToHips(Transform hips, Vector3 targetPos, Quaternion targetRot)
+    {
+        Vector3 oldDir = hips.up; // actual forward axis
+        oldDir.y = 0f;
+        oldDir.Normalize();
+
+        hips.localPosition = targetPos;
+        hips.localRotation = targetRot;
+
+        Vector3 newDir = hips.up;
+        newDir.y = 0f;
+        newDir.Normalize();
+
+        float deltaY = Vector3.SignedAngle(oldDir, newDir, Vector3.up);
+        _human.transform.Rotate(0f, -deltaY, 0f, Space.World);
     }
 }
 #endregion
@@ -389,6 +575,9 @@ public class EmptyHandsState : HandState
     }
     public void DoState()
     {
+        if (_human._MovementState is UnconsciousMoveState)
+            return;
+
         //Check For State Change
         if (HandStateMethods.CheckForCarryState(_human))
         {
@@ -449,17 +638,18 @@ public class WeaponHandState : HandState
     private Humanoid _human;
     public WeaponHandState(Humanoid human)
     {
-        this._human = human;
+        _human = human;
     }
     public void EnterState(HandState oldState)
     {
-        _human._LocomotionSystem.MovementSpeedMultiplierHandState = 0.8f;
-        _human.ChangeAnimation("WeaponHands");
+        _human._LocomotionSystem.MovementSpeedMultiplierHandState = 1f;
+        if (_human is Player player)
+            GameManager._Instance.BufferActivated(ref player._AttackReadyBuffer, player, ref player._AttackReadyCoroutine);
     }
 
     public void ExitState(HandState newState)
     {
-
+        _human.StopCombatActions();
     }
     public void DoState()
     {
@@ -477,6 +667,15 @@ public class WeaponHandState : HandState
 
         if (_human is Player)
             HandStateMethods.ArrangeLookAtForCamPosition(_human as Player);
+
+        HandStateMethods.CheckAttack(_human);
+        HandStateMethods.ArrangeBlock(_human);
+        HandStateMethods.TryParry(_human);
+
+        if (_human._IsInAttackReady)
+        {
+            _human._AttackReadySpeed = Mathf.Pow(Mathf.Clamp(_human._LastAttackReadyTime + 1f - Time.time, 0f, 0.8f), 1.75f);
+        }
     }
 }
 

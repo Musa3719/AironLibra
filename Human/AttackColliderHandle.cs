@@ -1,37 +1,30 @@
-using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
-public class Projectile : MonoBehaviour, ICanDamage
+public class AttackColliderHandle : MonoBehaviour, ICanDamage
 {
-    public Damage _Damage { get { return _damage; } set { _damage = value; } }
-    private Damage _damage;
-
-    private Item _connectedItem;
-    private Rigidbody _rb;
-
     private Weapon _FromWeapon;
+
     private List<ICanGetHurt> _alreadyHit = new List<ICanGetHurt>();
-
-    public void Init(WeaponItem item)
-    {
-        _connectedItem = item;
-    }
-
     private void Awake()
     {
-        _rb = GetComponent<Rigidbody>();
-    }
-    public void InitiateProjectile(Weapon fromWeapon, Vector3 dir, float speed, Damage damage)
-    {
-        _FromWeapon = fromWeapon;
-        _rb.linearVelocity = dir * speed;
-        transform.rotation = Quaternion.LookRotation(dir, Vector3.up);
-        _Damage = damage;
-    }
+        if (transform.parent != null && transform.parent.GetComponent<Weapon>() != null)
+            _FromWeapon = transform.parent.GetComponent<Weapon>();
 
-    private void OnTriggerEnter(Collider other)
+        if (transform.parent.gameObject.name.Contains("Punch") || transform.parent.gameObject.name.Contains("Claw") || transform.parent.gameObject.name.Contains("Kick"))
+        {
+            _FromWeapon._ConnectedItem = new WeaponItem(Default_MeleeWeapon._Instance);
+            _FromWeapon._ConnectedItem._EquippedHumanoid = GetHurtable(GetComponent<Collider>()) as Humanoid;
+            (_FromWeapon._ConnectedItem._ItemDefinition as Default_MeleeWeapon).SetDamageOverride(_FromWeapon._ConnectedItem._EquippedHumanoid._DefaultMeleeWeaponDamage);
+        }
+    }
+    private void OnEnable()
     {
+        _alreadyHit.Clear();
+    }
+    public void OnTrigger(Collider other)
+    {
+        if (other == null) return;
         if (other.isTrigger && !IsHitBox(other)) return;
         if (other.GetComponent<MeleeWeapon>() != null || other.name.StartsWith("AttackCollider")) return;
 
@@ -50,7 +43,7 @@ public class Projectile : MonoBehaviour, ICanDamage
         {
             if (hurtable._IsBlocking)
             {
-                if (GetBlockAngle(hurtable._Transform.forward, _FromWeapon._AttackForward) < 100f)
+                if (GetBlockAngle(hurtable._Transform.forward, _FromWeapon._AttackForward) < 80f)
                     GiveDamage(other, hurtable);
                 else
                 {
@@ -72,8 +65,6 @@ public class Projectile : MonoBehaviour, ICanDamage
                 GiveDamage(other, hurtable);
             }
         }
-
-        Destroy(gameObject);
     }
     private float GetBlockAngle(Vector3 hurtableTransformForward, Vector3 attackerTransformForward)
     {
@@ -81,7 +72,7 @@ public class Projectile : MonoBehaviour, ICanDamage
     }
     private void GiveDamage(Collider other, ICanGetHurt hurtable, bool isDamageToHands = false)
     {
-        InitDamage(other, isDamageToHands).Inflict(hurtable, 1f);
+        InitDamage(other, isDamageToHands).Inflict(hurtable, _FromWeapon._HeavyAttackMultiplier);
     }
 
     private Damage InitDamage(Collider other, bool isDamageToHands = false)
@@ -91,7 +82,8 @@ public class Projectile : MonoBehaviour, ICanDamage
         DamagePart damagePart = isDamageToHands ? DamagePart.Hands : GetDamagePartFromBoneName(other.name);
         float damageAmount = (_FromWeapon._ConnectedItem._ItemDefinition as ICanBeEquippedForDefinition)._Value;
         Vector3 dir = _FromWeapon.GetHitDirection();
-        _FromWeapon._Damage.Init(damageType, damagePart, damageAmount, dir, transform.forward, AttackDirectionFrom.Forward);
+        Vector3 attackerDirection = _FromWeapon._ConnectedItem._EquippedHumanoid.transform.forward;
+        _FromWeapon._Damage.Init(damageType, damagePart, damageAmount, dir, attackerDirection, _FromWeapon._AttackDirectionFrom);
         return _FromWeapon._Damage;
     }
     private DamagePart GetDamagePartFromBoneName(string nameStr)

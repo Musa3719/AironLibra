@@ -3,12 +3,16 @@ using UnityEngine;
 using System.Linq;
 using UMA;
 using UMA.CharacterSystem;
+using System.Buffers;
 
 public static class NPCManager
 {
     public static List<NPC> _AllNPCs { get; set; }
     public static NPCDistanceComparer _Comparer { get; set; }
+    private static NPC[] _npcPool;
+    private static float[] _distancePool;
     private static float _sortCounter;
+    private static Dictionary<NPC, float> _awayNpcUpdateCounters;
 
     public static void AddToList(NPC npc)
     {
@@ -20,21 +24,50 @@ public static class NPCManager
         if (_AllNPCs.Contains(npc))
             _AllNPCs.Remove(npc);
     }
-
+    public static void Start()
+    {
+        _npcPool = new NPC[GameManager._Instance._NumberOfNpcs];
+        _distancePool = new float[GameManager._Instance._NumberOfNpcs];
+        _awayNpcUpdateCounters = new Dictionary<NPC, float>();
+        for (int i = 0; i < GameManager._Instance._NumberOfNpcs; i++)
+        {
+            _awayNpcUpdateCounters.Add(_AllNPCs[i], Random.Range(2f, 18f));
+        }
+    }
     public static void Update()
     {
         _sortCounter += Time.deltaTime;
-        if (_sortCounter > 0.75f)
+        if (_sortCounter > 2f)
         {
             _sortCounter = 0f;
             SortNPCsByDistance();
         }
 
-        if (M_Input.GetKeyDown(KeyCode.Q))
+        foreach (var npc in _AllNPCs)
+        {
+            _awayNpcUpdateCounters[npc] -= Time.deltaTime;
+            if (_awayNpcUpdateCounters[npc] < 0f)
+            {
+                _awayNpcUpdateCounters[npc] = Random.Range(8f, 12f);
+                if (npc.transform.childCount != 0)
+                    npc.UpdateWhenAway();
+            }
+        }
+
+        if (M_Input.GetKeyDownForTesting(KeyCode.Q))
         {
             foreach (var npc in _AllNPCs)
             {
                 npc.SpawnNPCChild();
+            }
+        }
+        if (M_Input.GetKeyDownForTesting(KeyCode.F))
+        {
+            new WeaponItem(LongSword_1._Instance).Equip(WorldHandler._Instance._Player._Inventory);
+            foreach (var npc in _AllNPCs)
+            {
+                new WeaponItem(LongSword_1._Instance).Equip(npc._Inventory);
+                npc.ActivateCombatMode();
             }
         }
     }
@@ -50,10 +83,11 @@ public static class NPCManager
         }
         else
         {
-            avatar.ChangeRace("HumanFemale", DynamicCharacterAvatar.ChangeRaceOptions.none);
+            avatar.ChangeRace("HumanFemaleHighPoly", DynamicCharacterAvatar.ChangeRaceOptions.none);
             avatar.GetComponent<UMA.PoseTools.ExpressionPlayer>().overrideMecanimJaw = true;
         }
 
+        (avatar.GetComponent<UMA.PoseTools.ExpressionPlayer>() as UMA.PoseTools.UMAExpressionPlayer).InstantBlink();
     }
     public static void ChangeColor(DynamicCharacterAvatar avatar, string colorName, Color newColor)
     {
@@ -116,21 +150,21 @@ public static class NPCManager
         {
             umaTextRecipes.Add(UMAAssetIndexer.Instance.GetRecipe("MaleDefaultUnderwear"));
 
-            int random = Random.Range(0, 3);
+            umaTextRecipes.Add(UMAAssetIndexer.Instance.GetRecipe("TestChestArmor_Recipe"));
+            /*int random = Random.Range(0, 3);
             if (random == 0)
                 umaTextRecipes.Add(UMAAssetIndexer.Instance.GetRecipe("MaleShirt1"));
             else if (random == 1)
                 umaTextRecipes.Add(UMAAssetIndexer.Instance.GetRecipe("MaleShirt2"));
             else if (random == 2)
                 umaTextRecipes.Add(UMAAssetIndexer.Instance.GetRecipe("MaleShirt3"));
-            //umaTextRecipes.Add(UMAAssetIndexer.Instance.GetRecipe("TestChestArmor_Recipe"));
 
 
             random = Random.Range(0, 2);
             if (random == 0)
                 umaTextRecipes.Add(UMAAssetIndexer.Instance.GetRecipe("MaleShorts1"));
             else if (random == 1)
-                umaTextRecipes.Add(UMAAssetIndexer.Instance.GetRecipe("MaleShorts2"));
+                umaTextRecipes.Add(UMAAssetIndexer.Instance.GetRecipe("MaleShorts2"));*/
         }
         else
         {
@@ -157,7 +191,19 @@ public static class NPCManager
     private static void SortNPCsByDistance()
     {
         if (_AllNPCs.Count == 0) return;
-        _AllNPCs.Sort(_Comparer);
+
+        for (int i = 0; i < _AllNPCs.Count; i++)
+        {
+            _npcPool[i] = _AllNPCs[i];
+            _distancePool[i] = (_AllNPCs[i].transform.position - WorldHandler._Instance._Player.transform.position).sqrMagnitude;
+        }
+
+        System.Array.Sort(_distancePool, _npcPool, 0, _AllNPCs.Count);
+        _AllNPCs.Clear();
+        for (int i = 0; i < _npcPool.Length; i++)
+            _AllNPCs.Add(_npcPool[i]);
+
+        //_AllNPCs.Sort(_Comparer);
         //_AllNPCs = _AllNPCs.OrderBy(npc => Vector3.Distance(npc.transform.position, WorldHandler._Instance._Player.transform.position)).ToList();
     }
 

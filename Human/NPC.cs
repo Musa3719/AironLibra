@@ -31,6 +31,7 @@ public class NPC : Humanoid
     public Vector3 _AimPosition { get; set; }
     public bool _IsOnLinkMovement { get; private set; }
 
+    private Coroutine _attackReadyCoroutine;
 
     private Vector3 _checkCornerDist;
 
@@ -42,14 +43,15 @@ public class NPC : Humanoid
         _isPathEnded = true;
         _Rigidbody = GetComponent<Rigidbody>();
         NPCManager.AddToList(this);
-        if (transform.childCount == 0) return;
-        _MainCollider = transform.GetChild(0).Find("char").Find("Root").Find("Global").Find("Position").Find("Hips").Find("MainCollider").GetComponent<CapsuleCollider>();
+        if (transform.childCount == 0) { AwakeForAway(); return; }
+        _MainCollider = transform.GetChild(0).Find("char").Find("MainCollider").GetComponent<CapsuleCollider>();
 
         base.Awake();
         _checkCornerDist = Vector3.zero;
         _cornersFromPath = new List<Vector3>();
 
-        _Class = new Peasant();//
+        if (_Class == null)
+            _Class = new Peasant();//
 
     }
     protected override void Start()
@@ -74,8 +76,13 @@ public class NPC : Humanoid
         NPCManager.RemoveFromList(this);
     }
 
+    public void UpdateWhenAway()
+    {
+
+    }
     protected override void Update()
     {
+        if (transform.childCount == 0) { enabled = false; return; }
         if (GameManager._Instance._IsGameStopped) return;
 
         if (_UmaDynamicAvatar != null)
@@ -89,10 +96,16 @@ public class NPC : Humanoid
         }
 
         base.Update();
+
+        if (_InteractInput)
+        {
+            InventoryHolder inventoryHolder = CheckForNearInventories(false);
+            ///take send equip unequip if public, if not steal or trade 
+        }
         //testing
         //ArrangeNewMovementTarget(WorldHandler._Instance._Player.transform.position);
 
-        if (M_Input.GetKeyDown(KeyCode.Alpha1))
+        /*if (M_Input.GetKeyDown(KeyCode.Alpha1))
             ChangeMuscleAmount(false);
         if (M_Input.GetKeyDown(KeyCode.Alpha2))
             ChangeMuscleAmount(true);
@@ -101,25 +114,66 @@ public class NPC : Humanoid
         if (M_Input.GetKeyDown(KeyCode.Alpha4))
             ChangeFatAmount(true);
         if (M_Input.GetKeyDown(KeyCode.F))
-            _IsMale = true;
+            _IsMale = true;*/
+        if (M_Input.GetKeyDownForTesting(KeyCode.G))
+            TryAttacking(false, 0.15f);
         //WorldAndNpcCreation.SetGender(_UmaDynamicAvatar, Random.Range(0, 2) == 0);
         //WorldAndNpcCreation.ChangeColor(_UmaDynamicAvatar, "Skin", Color.red);
-        if (M_Input.GetKeyDown(KeyCode.E))
+        if (M_Input.GetKeyDownForTesting(KeyCode.E))
             DestroyNPCChild();
-        if (M_Input.GetKeyDown(KeyCode.M))
+        if (M_Input.GetKeyDownForTesting(KeyCode.M))
             ArrangeNewMovementTarget(GameObject.Find("TargetPositionTest").transform.position);
-        if (M_Input.GetKey(KeyCode.N))
+        if (M_Input.GetKeyForTesting(KeyCode.N))
             _SprintInput = true;
         else
             _SprintInput = false;
 
     }
+
     public void DisableInputs()
     {
         _JumpInput = false;
         _CrouchInput = false;
         _InteractInput = false;
     }
+
+    public void TryAttacking(bool isPunch, float targetAttackReadyTime)
+    {
+        if (!HandStateMethods.IsAttackPossible(this)) return;
+
+        HandStateMethods.ArrangeIsAttackingFromLeftHand(this);
+        HandStateMethods.ReadyAttackAnimation(this, HandStateMethods.GetCurrentWeaponType(this, _IsAttackingFromLeftHandWeapon));
+        GameManager._Instance.CoroutineCall(ref _attackReadyCoroutine, AttackReadyCoroutine(isPunch, targetAttackReadyTime), this);
+    }
+    private IEnumerator AttackReadyCoroutine(bool isPunch, float targetAttackReadyTime)
+    {
+        float timer = 0f;
+        while (timer < targetAttackReadyTime)
+        {
+            timer += Time.deltaTime;
+            _AttackReadyTime = timer;
+            yield return null;
+        }
+        _AttackReadyTime = targetAttackReadyTime;
+        if (!HandStateMethods.IsAttackPossible(this)) { HandStateMethods.AttackCancelled(this); yield break; }
+
+        if (isPunch)
+            PunchOrKick(targetAttackReadyTime);
+        else
+            LightOrHeavyAttack(targetAttackReadyTime);
+    }
+    public void LightOrHeavyAttack(float targetAttackReadyTime)
+    {
+        if (targetAttackReadyTime > _HeavyAttackThreshold)
+            _HeavyAttackInput = true;
+        else
+            _LightAttackInput = true;
+    }
+    public void PunchOrKick(float targetAttackReadyTime)
+    {
+        _KickInput = true;
+    }
+
     public void SpawnNPCChild()
     {
         if (transform.childCount != 0) return;
@@ -128,7 +182,7 @@ public class NPC : Humanoid
         transform.GetChild(0).localPosition = Vector3.zero;
         _Rigidbody.isKinematic = false;
         _Rigidbody.WakeUp();
-        this.enabled = true;
+        enabled = true;
 
         Awake();
         Start();
@@ -149,7 +203,7 @@ public class NPC : Humanoid
         _Rigidbody.isKinematic = true;
         _Rigidbody.Sleep();
         DisableInputs();
-        this.enabled = false;
+        enabled = false;
     }
     private void ArrangeDirection()
     {
@@ -261,18 +315,6 @@ public class NPC : Humanoid
         }
     }
 
-    private void ActivateCombatMode()
-    {
-        bool conditions = _MovementState is Locomotion;
-        if (conditions)
-            _IsInCombatMode = true;
-    }
-    private void DisableCombatMode()
-    {
-        bool conditions = _MovementState is Locomotion;
-        if (conditions)
-            _IsInCombatMode = false;
-    }
     public void Stop(bool willRetry = false)
     {
         _cornersFromPath.Clear();
