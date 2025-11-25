@@ -40,6 +40,7 @@ public class SaveSystemHandler : MonoBehaviour
             _ObjectPositionsInChunk = GameManager._Instance._ObjectPositionsInChunk,
             _ObjectRotationsInChunk = GameManager._Instance._ObjectRotationsInChunk,
             _ObjectParentsInChunk = GameManager._Instance._ObjectParentsInChunk,
+            _ObjectItemHandleData = GameManager._Instance._ObjectItemHandleData,
             _NpcData = npcData,
             _PlayerData = playerData,
             _SnowLevel = Shader.GetGlobalFloat("_Global_SnowLevel"),
@@ -64,6 +65,7 @@ public class SaveSystemHandler : MonoBehaviour
             GameManager._Instance._ObjectsInChunk = data._ObjectsInChunk;
             GameManager._Instance._ObjectPositionsInChunk = data._ObjectPositionsInChunk;
             GameManager._Instance._ObjectRotationsInChunk = data._ObjectRotationsInChunk;
+            GameManager._Instance._ObjectItemHandleData = data._ObjectItemHandleData;
             GameManager._Instance._ObjectParentsInChunk = data._ObjectParentsInChunk;
             Shader.SetGlobalFloat("_Global_SnowLevel", data._SnowLevel);
 
@@ -83,6 +85,7 @@ public class SaveSystemHandler : MonoBehaviour
             WorldHandler._Instance._Player._DnaData = data._PlayerData._DnaData;
             WorldHandler._Instance._Player._MuscleLevel = WorldHandler._Instance._Player._DnaData["upperMuscle"];
             WorldHandler._Instance._Player._FatLevel = WorldHandler._Instance._Player._DnaData["upperWeight"];
+            WorldHandler._Instance._Player._Height = WorldHandler._Instance._Player._DnaData["height"];
             WorldHandler._Instance._Player._CharacterColors = data._PlayerData._CharacterColors;
             WorldHandler._Instance._Player._WardrobeData = data._PlayerData._WardrobeData;
             if (WorldHandler._Instance._Player._UmaDynamicAvatar.BuildCharacterEnabled)
@@ -102,8 +105,9 @@ public class SaveSystemHandler : MonoBehaviour
                 npc.transform.localEulerAngles = data._NpcData[i]._Rot;
                 npc._IsMale = data._NpcData[i]._IsMale;
                 npc._DnaData = data._NpcData[i]._DnaData;
-                npc._MuscleLevel= npc._DnaData["upperMuscle"];
+                npc._MuscleLevel = npc._DnaData["upperMuscle"];
                 npc._FatLevel = npc._DnaData["upperWeight"];
+                npc._Height = npc._DnaData["height"];
                 npc._CharacterColors = data._NpcData[i]._CharacterColors;
                 npc._WardrobeData = data._NpcData[i]._WardrobeData;
 
@@ -199,6 +203,7 @@ public class GameData
     public List<Vector3>[,] _ObjectPositionsInChunk;
     public List<Vector3>[,] _ObjectRotationsInChunk;
     public List<Transform>[,] _ObjectParentsInChunk;
+    public List<ItemHandleData>[,] _ObjectItemHandleData;
     public PlayerData _PlayerData;
     public List<NpcData> _NpcData;
     public float _SnowLevel;

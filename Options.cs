@@ -21,22 +21,26 @@ public class Options : MonoBehaviour
     public int _LoadedGamesCount { get; set; }
 
     #region Game Settings
+    public int _Quality { get; set; }
     public bool _IsExpressionPlayerEnabled { get; set; }
     public bool _IsFootIKEnabled { get; set; }
     public bool _IsLeaningEnabled { get; set; }
+    public bool _IsLookForCamDistanceEnabled { get; set; }
     #endregion
 
     private void Awake()
     {
-        #if UNITY_EDITOR
+#if UNITY_EDITOR
         Debug.unityLogger.logEnabled = true;
-        #else
+#else
         Debug.unityLogger.logEnabled = false;
-        #endif
+#endif
         _Instance = this;
         _SoundVolume = PlayerPrefs.GetFloat("Sound", 0.33f);
         _MusicVolume = PlayerPrefs.GetFloat("Music", 0.33f);
         _LoadedGamesCount = PlayerPrefs.GetInt("LoadedGames", 0);
+        _Quality = PlayerPrefs.GetInt("Quality", 0);
+        SetGraphicSetting(_Quality);
         //PlayerPrefs.SetInt("LoadedGames", 0);
 
         _SoundSlider = GameObject.FindGameObjectWithTag("UI").transform.Find("UIMain").Find("Options").Find("SoundSlider").GetComponentInChildren<Slider>();
@@ -44,10 +48,14 @@ public class Options : MonoBehaviour
 
         _SoundSlider.value = _SoundVolume;
         _MusicSlider.value = _MusicVolume;
+
+        _IsExpressionPlayerEnabled = true;
+        _IsFootIKEnabled = true;
+        _IsLeaningEnabled = false;
+        _IsLookForCamDistanceEnabled = true;
     }
     private void Start()
     {
-        ArrangeGraphics();
         ChangeExpressionPlayerSetting(_IsExpressionPlayerEnabled);
         ChangeFootIKSetting(_IsFootIKEnabled);
         ChangeLeaningSetting(_IsLeaningEnabled);
@@ -126,7 +134,10 @@ public class Options : MonoBehaviour
     }
     public void SetGraphicSetting(int number)
     {
+        _Quality = number;
+        PlayerPrefs.SetInt("Quality", _Quality);
         QualitySettings.SetQualityLevel(number);
+        ArrangeGraphics();
     }
     public void ArrangeGraphics()
     {

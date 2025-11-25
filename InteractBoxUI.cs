@@ -9,17 +9,27 @@ public class InteractBoxUI : MonoBehaviour
     {
         _rect = GetComponent<RectTransform>();
     }
-    public bool IsHovered()
+    public bool IsHovered(bool isForGamepad)
     {
         if (!gameObject.activeSelf) return false;
 
-        Vector2 mousePos = Input.mousePosition;
-
-        bool isOver = RectTransformUtility.RectangleContainsScreenPoint(
+        if (isForGamepad)
+        {
+            Vector2 gamepadPos = GamepadMouse._Instance._CursorRect.position;
+            bool isGamepadOver = RectTransformUtility.RectangleContainsScreenPoint(
+             _rect,
+             gamepadPos
+            );
+            return isGamepadOver;
+        }
+        else
+        {
+            Vector2 mousePos = Input.mousePosition;
+            bool isMouseOver = RectTransformUtility.RectangleContainsScreenPoint(
             _rect,
             mousePos
-        );
-
-        return isOver;
+            );
+            return isMouseOver;
+        }
     }
 }

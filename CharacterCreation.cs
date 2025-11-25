@@ -65,9 +65,8 @@ public class CharacterCreation : MonoBehaviour
         _uI = GameObject.FindGameObjectWithTag("UI").transform.Find("UIMain").gameObject;
         _uI.SetActive(false);
 
-        SliderArrange(transform.Find("Canvas").Find("DNA").Find("BodyDnaSliders"));
-        SliderArrange(transform.Find("Canvas").Find("DNA").Find("FaceDnaSliders"));
-        SliderArrange(transform.Find("Canvas").Find("DNA").Find("OtherDnaSliders"));
+        ArrangeSliders(false);
+        SetDna("feetSize", 0.435f);
     }
     private void OnDisable()
     {
@@ -86,31 +85,41 @@ public class CharacterCreation : MonoBehaviour
             EmptyButton();
     }
 
-    private void SliderArrange(Transform parent)
+    private void ArrangeSliders(bool isFromChangeGender)
+    {
+        SliderArrange(transform.Find("Canvas").Find("DNA").Find("BodyDnaSliders"), isFromChangeGender);
+        SliderArrange(transform.Find("Canvas").Find("DNA").Find("FaceDnaSliders"), isFromChangeGender);
+        SliderArrange(transform.Find("Canvas").Find("DNA").Find("OtherDnaSliders"), isFromChangeGender);
+    }
+    private void SliderArrange(Transform parent, bool isFromChangeGender)
     {
         Slider slider;
         foreach (Transform child in parent)
         {
             slider = child.GetComponent<Slider>();
             if (slider == null) continue;
-            string name = slider.gameObject.name;
-            if (name == "Muscle")
+
+            if (!isFromChangeGender)
             {
-                _muscleLevel = slider.value;
-                slider.onValueChanged.AddListener((float value) => { _muscleLevel = value; SetDna("upperMuscle", value); SetDna("lowerMuscle", value); SetDna("armWidth", value); SetDna("forearmWidth", value); if (_isMale) SetDna("bodyFitness", value); RecalculateLevels(); RecalculateStartCoin(); RecalculateHeadSize(); });
+                string name = slider.gameObject.name;
+                if (name == "Muscle")
+                {
+                    _muscleLevel = slider.value;
+                    slider.onValueChanged.AddListener((float value) => { _muscleLevel = value; SetDna("upperMuscle", value); SetDna("lowerMuscle", value); SetDna("armWidth", value); SetDna("forearmWidth", value); if (_isMale) SetDna("bodyFitness", value); RecalculateLevels(); RecalculateStartCoin(); RecalculateHeadSize(); });
+                }
+                else if (name == "Fat")
+                {
+                    _fatLevel = slider.value;
+                    slider.onValueChanged.AddListener((float value) => { _fatLevel = value; SetDna("upperWeight", value); SetDna("lowerWeight", value); SetDna("belly", value); SetDna("waist", value); RecalculateLevels(); RecalculateStartCoin(); RecalculateHeadSize(); });
+                }
+                else if (name == "height")
+                {
+                    _heightLevel = slider.value;
+                    slider.onValueChanged.AddListener((float value) => { _heightLevel = value; SetDna("height", value); RecalculateLevels(); });
+                }
+                else
+                    slider.onValueChanged.AddListener((float value) => SetDna(name, value));
             }
-            else if (name == "Fat")
-            {
-                _fatLevel = slider.value;
-                slider.onValueChanged.AddListener((float value) => { _fatLevel = value; SetDna("upperWeight", value); SetDna("lowerWeight", value); SetDna("belly", value); SetDna("waist", value); RecalculateLevels(); RecalculateStartCoin(); RecalculateHeadSize(); });
-            }
-            else if (name == "height")
-            {
-                _heightLevel = slider.value;
-                slider.onValueChanged.AddListener((float value) => { _heightLevel = value; SetDna("height", value); RecalculateLevels(); });
-            }
-            else
-                slider.onValueChanged.AddListener((float value) => SetDna(name, value));
 
             float temp = slider.value;
             slider.value = 0f;
@@ -120,12 +129,14 @@ public class CharacterCreation : MonoBehaviour
     private void RecalculateLevels()
     {
         _firstDnaMenu.transform.Find("Info").Find("StrengthText").GetComponent<TextMeshProUGUI>().text = GameManager._Instance.GetStrLevel(_heightLevel, _muscleLevel, _fatLevel, _isMale).ToString();
+        _firstDnaMenu.transform.Find("Info").Find("CarryCapacityText").GetComponent<TextMeshProUGUI>().text = (_muscleLevel * 80f + _fatLevel * 20f + _heightLevel * 40f).ToString("F2");
         _firstDnaMenu.transform.Find("Info").Find("AgilityText").GetComponent<TextMeshProUGUI>().text = GameManager._Instance.GetAgiLevel(_heightLevel, _muscleLevel, _fatLevel, _isMale).ToString();
     }
     private void RecalculateHeadSize()
     {
-        float headSize = 0.41f + (_fatLevel * 1.5f + _muscleLevel) * 0.1f;
+        float headSize = 0.4f + (_fatLevel * 0.5f + _muscleLevel) * 0.1f;
         float neckSize = (_fatLevel / 2f) + (_muscleLevel / 2f);
+        if (!_isMale) { headSize -= 0.04f; neckSize += 0.05f; }
         SetDna("headSize", headSize);
         SetDna("neckThickness", neckSize);
     }
@@ -144,7 +155,7 @@ public class CharacterCreation : MonoBehaviour
             slider.value = Random.Range(slider.minValue, slider.maxValue);
         }
     }
-    
+
     public void SetName(string name)
     {
         SaveSystemHandler._Instance._PlayerNameCreation = name;
@@ -180,6 +191,7 @@ public class CharacterCreation : MonoBehaviour
             _chooseBeardButton.interactable = false;
         }
 
+        ArrangeSliders(true);
         RecalculateLevels();
         BuildChar();
     }
@@ -331,7 +343,10 @@ public class CharacterCreation : MonoBehaviour
         if (GameManager._Instance._LevelIndex == 0)
             gameObject.SetActive(false);
         else
+        {
+            SaveSystemHandler._Instance.SaveGame(SaveSystemHandler._Instance._ActiveSave);
             GameManager._Instance.ToMenu();
+        }
     }
     public void ConfirmCharacter()
     {

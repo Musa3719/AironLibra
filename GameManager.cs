@@ -7,6 +7,8 @@ using UMA.CharacterSystem;
 using Unity.AI.Navigation;
 using UnityEngine;
 using UnityEngine.AddressableAssets;
+using UnityEngine.EventSystems;
+using UnityEngine.InputSystem;
 using UnityEngine.ResourceManagement.AsyncOperations;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
@@ -18,16 +20,22 @@ public class GameManager : MonoBehaviour
     public int _NumberOfColumnsForTerrains => 1;
     public int _NumberOfRowsForTerrains => 1;
 
+    public GraphicRaycaster _GraphicRaycaster { get; private set; }
+
     public Dictionary<string, AssetReferenceGameObject> _ItemNameToPrefab;
     public Dictionary<string, AssetReferenceSprite> _ItemNameToSprite;
+
+    public Dictionary<string, float> _AnimNameToAttackStartTime;
+    public Dictionary<string, float> _AnimNameToAttackEndTime;
 
     public List<AssetReferenceGameObject>[,] _ObjectsInChunk;
     public List<Transform>[,] _ObjectParentsInChunk;
     public List<Vector3>[,] _ObjectPositionsInChunk;
     public List<Vector3>[,] _ObjectRotationsInChunk;
+    public List<ItemHandleData>[,] _ObjectItemHandleData;
     //chest data
     //npc data
-
+    public ushort _NumberOfNpcs { get; private set; }
     public GameObject _ListenerObj { get { if (_Player == null) return _MainCamera; return _Player; } }
     public GameObject _MainCamera { get; private set; }
     public GameObject _Player { get; private set; }
@@ -42,13 +50,24 @@ public class GameManager : MonoBehaviour
     public GameObject _MapScreen { get; private set; }
     public GameObject _DialogueScreen { get; private set; }
     public GameObject _GameHUD { get; private set; }
+    public TextMeshProUGUI _FpsText { get; private set; }
+    public Image _StaminaHUDImage { get; private set; }
+    public Image _StaminaBackgroundHUDImage { get; private set; }
+    public RectTransform _StaminaHUDRect { get; private set; }
+    public GameObject _HealthInfoHUD { get; private set; }
     public GameObject _OptionsScreen { get; private set; }
     public GameObject _LoadScreen { get; private set; }
     public GameObject _SaveScreen { get; private set; }
     public GameObject _LoadingObject { get; private set; }
     public Transform _EnvironmentTransform { get; private set; }
     public ObjectPool _NPCPool { get; private set; }
+    public InventorySlotUI _InteractMenuSlotUI { get; set; }
     public InventorySlotUI _LastClickedSlotUI { get; set; }
+    public InventorySlotUI _InventoryCarryModeSlotUI { get; set; }
+    public bool _IsCarryUIFromGamepad { get; set; }
+    public Image _InventoryCarryModeSlotUIImage { get; set; }
+    public RectTransform _InventoryCarryModeSlotUITransform { get; set; }
+
 
     private Sprite[] _equipmentSlotDefaultImages;
     private Image[] _playerInventoryImages;
@@ -63,7 +82,10 @@ public class GameManager : MonoBehaviour
     public bool _IsGameStopped { get; private set; }
     public int _InGameMenuNumber { get; private set; }
 
+    private bool _updateInventoryBuffer;
     public InteractBoxUI _InteractBoxUI { get; private set; }
+    public float _CarryUITimerForMouse { get; set; }
+    public float _CarryUITimerForGamepad { get; set; }
     public int _SplitAmount { get; set; }
 
     public int _LevelIndex { get; private set; }
@@ -88,9 +110,13 @@ public class GameManager : MonoBehaviour
     private float _isSnowingTimer;
     private float _isRainingTimer;
 
+    public Queue<float> _fpsValues;
+
     private void Awake()
     {
         _Instance = this;
+        _GraphicRaycaster = FindFirstObjectByType<GraphicRaycaster>();
+        _fpsValues = new Queue<float>();
         transform.Find("CharacterCreation").GetComponent<CharacterCreation>().Init();
         Shader.EnableKeyword("_USEGLOBALSNOWLEVEL");
         Shader.EnableKeyword("_PW_GLOBAL_COVER_LAYER");
@@ -98,13 +124,14 @@ public class GameManager : MonoBehaviour
         NPCManager._AllNPCs = new List<NPC>();
 
         _maleDnaNames = UMAGlobalContext.Instance.GetRace("HumanMale").GetDNANames();
-        _femaleDnaNames = UMAGlobalContext.Instance.GetRace("HumanFemale").GetDNANames();
+        _femaleDnaNames = UMAGlobalContext.Instance.GetRace("HumanFemaleHighPoly").GetDNANames();
 
         NPCManager._Comparer = new NPCDistanceComparer();
         _ObjectsInChunk = new List<AssetReferenceGameObject>[_NumberOfColumnsForTerrains, _NumberOfRowsForTerrains];
         _ObjectPositionsInChunk = new List<Vector3>[_NumberOfColumnsForTerrains, _NumberOfRowsForTerrains];
         _ObjectRotationsInChunk = new List<Vector3>[_NumberOfColumnsForTerrains, _NumberOfRowsForTerrains];
         _ObjectParentsInChunk = new List<Transform>[_NumberOfColumnsForTerrains, _NumberOfRowsForTerrains];
+        _ObjectItemHandleData = new List<ItemHandleData>[_NumberOfColumnsForTerrains, _NumberOfRowsForTerrains];
         _MainCamera = Camera.main.gameObject;
         _Player = GameObject.FindGameObjectWithTag("Player");
 
@@ -116,6 +143,7 @@ public class GameManager : MonoBehaviour
         _LevelIndex = SceneManager.GetActiveScene().buildIndex;
         if (_LevelIndex != 0)
         {
+            _NumberOfNpcs = 1;
             _EnvironmentTransform = GameObject.Find("Environment").transform;
             _StopScreen = GameObject.FindGameObjectWithTag("UI").transform.Find("UIMain").Find("StopScreen").gameObject;
             _InGameMenu = GameObject.FindGameObjectWithTag("UI").transform.Find("UIMain").Find("InGameMenu").gameObject;
@@ -123,11 +151,18 @@ public class GameManager : MonoBehaviour
             _AnotherInventoryList = GameObject.FindGameObjectWithTag("UI").transform.Find("UIMain").Find("InGameMenu").Find("InventoryScreen").Find("AnotherInventory").gameObject;
             _AnotherInventoryChestList = GameObject.FindGameObjectWithTag("UI").transform.Find("UIMain").Find("InGameMenu").Find("InventoryScreen").Find("AnotherInventoryChest").gameObject;
             _InventoryItemInteractPopup = GameObject.FindGameObjectWithTag("UI").transform.Find("UIMain").Find("InGameMenu").Find("InventoryScreen").Find("InteractScreen").gameObject;
+            _InventoryCarryModeSlotUIImage = GameObject.FindGameObjectWithTag("UI").transform.Find("UIMain").Find("InGameMenu").Find("InventoryScreen").Find("CarryImageBackground").Find("CarryImage").GetComponent<Image>();
+            _InventoryCarryModeSlotUITransform = GameObject.FindGameObjectWithTag("UI").transform.Find("UIMain").Find("InGameMenu").Find("InventoryScreen").Find("CarryImageBackground").GetComponent<RectTransform>();
             _InteractBoxUI = GameObject.FindGameObjectWithTag("UI").transform.Find("UIMain").Find("InGameMenu").Find("InventoryScreen").Find("InteractScreen").Find("InteractBox").GetComponent<InteractBoxUI>();
             _InventoryItemInfoPopup = GameObject.FindGameObjectWithTag("UI").transform.Find("UIMain").Find("InGameMenu").Find("InventoryScreen").Find("InfoScreen").gameObject;
             _MapScreen = GameObject.FindGameObjectWithTag("UI").transform.Find("UIMain").Find("InGameMenu").Find("MapScreen").gameObject;
             _DialogueScreen = GameObject.FindGameObjectWithTag("UI").transform.Find("UIMain").Find("InGameMenu").Find("DialogueScreen").gameObject;
             _GameHUD = GameObject.FindGameObjectWithTag("UI").transform.Find("UIMain").Find("InGameScreen").gameObject;
+            _FpsText = _GameHUD.transform.Find("Fps").GetComponent<TextMeshProUGUI>();
+            _StaminaHUDImage = _GameHUD.transform.Find("StaminaBack").Find("Stamina").GetComponent<Image>();
+            _StaminaBackgroundHUDImage = _GameHUD.transform.Find("StaminaBack").GetComponent<Image>();
+            _StaminaHUDRect = _GameHUD.transform.Find("StaminaBack").Find("Stamina").GetComponent<RectTransform>();
+            _HealthInfoHUD = _GameHUD.transform.parent.Find("HealthInfo").gameObject;
             _SaveScreen = GameObject.FindGameObjectWithTag("UI").transform.Find("UIMain").Find("Save").gameObject;
 
             _NPCPool = transform.Find("NPC_Pool").GetComponent<ObjectPool>();
@@ -144,7 +179,7 @@ public class GameManager : MonoBehaviour
             for (int i = 0; i < playerEquipmentList.childCount; i++)
             {
                 _playerEquipmentImages[i] = playerEquipmentList.GetChild(i).GetComponent<Image>();
-                _equipmentSlotDefaultImages[i] = _playerEquipmentImages[i].sprite;
+                _equipmentSlotDefaultImages[i] = _playerEquipmentImages[i].transform.Find("DynamicImage").GetComponent<Image>().sprite;
             }
             Transform playerBackCarryList = _InventoryScreen.transform.Find("OwnInventory").Find("BackCarry").Find("BackCarryList");
             _playerInventoryBackCarryImages = new Image[playerBackCarryList.childCount];
@@ -189,15 +224,55 @@ public class GameManager : MonoBehaviour
 
         if (_LevelIndex != 0)
         {
+            NPCManager.Start();
             InitDictionaries();
         }
     }
+    private void LateUpdate()
+    {
+        if (!_updateInventoryBuffer) return;
 
+        _updateInventoryBuffer = false;
+        UpdateInventoryUI();
+    }
     private void Update()
     {
         if (_LevelIndex != 0)
         {
-            if (_LastClickedSlotUI != null && M_Input.GetButtonDown("Fire1") && !_InteractBoxUI.IsHovered())
+            if (_LastClickedSlotUI != null)
+            {
+                if (M_Input.GetButton("Fire1") && !_LastClickedSlotUI._IsHoverFromGamepad)
+                    _CarryUITimerForMouse += Time.unscaledDeltaTime;
+                else if (!M_Input.GetButton("Fire1"))
+                {
+                    _CarryUITimerForMouse = 0f;
+                    _LastClickedSlotUI = null;
+                }
+
+                if (_CarryUITimerForMouse > 0.06f && !_LastClickedSlotUI._IsCarryMode && !_LastClickedSlotUI._IsHoverFromGamepad && _InventoryCarryModeSlotUI == null)
+                {
+                    _LastClickedSlotUI.CarryStarted();
+                    _IsCarryUIFromGamepad = false;
+                }
+            }
+            if (_InventoryCarryModeSlotUI != null)
+            {
+                if (_IsCarryUIFromGamepad)
+                {
+                    if (_InventoryCarryModeSlotUI._IsCarryMode && !M_Input.IsCarryUIPressedForGamepad())
+                        _InventoryCarryModeSlotUI.CarryEnded();
+                    _InventoryCarryModeSlotUITransform.position = GamepadMouse._Instance._CursorRect.position;
+                }
+                else
+                {
+                    if (_InventoryCarryModeSlotUI._IsCarryMode && !M_Input.GetButton("Fire1"))
+                        _InventoryCarryModeSlotUI.CarryEnded();
+                    _InventoryCarryModeSlotUITransform.position = Input.mousePosition;
+                }
+
+            }
+
+            if (_InteractMenuSlotUI != null && ((M_Input.GetButtonDown("Fire1") && !_InteractBoxUI.IsHovered(false)) || (Gamepad.current != null && Gamepad.current.buttonSouth.wasPressedThisFrame && !_InteractBoxUI.IsHovered(true))))
             {
                 _InventoryItemInteractPopup.SetActive(false);
             }
@@ -237,6 +312,14 @@ public class GameManager : MonoBehaviour
                 _snowSettingsTimer += Time.deltaTime;
         }
 
+        if (Input.GetMouseButton(0) && (_GameHUD != null && !_GameHUD.activeInHierarchy))//gamepad click for split slider handled in gamepad mouse
+        {
+            Slider slider = GetOnSplitSlider();
+            if (slider != null)
+            {
+                UpdateSliderFromCursor(slider, Input.mousePosition);
+            }
+        }
         if (M_Input.GetButtonDown("InGameMenu") && _LevelIndex != 0)
         {
             if (_IsGameStopped)
@@ -318,13 +401,45 @@ public class GameManager : MonoBehaviour
     public void InitDictionaries()
     {
         _ItemNameToPrefab = new Dictionary<string, AssetReferenceGameObject>();
-        _ItemNameToPrefab.Add("Apple", AddressablesController._Instance._AppleItem);
+        _ItemNameToPrefab.Add("Apple", AddressablesController._Instance._ItemContainer);
+        _ItemNameToPrefab.Add("ChestArmor_1", AddressablesController._Instance._ChestArmor_1Item);
+        _ItemNameToPrefab.Add("LongSword_1", AddressablesController._Instance._LongSword_1Item);
+        _ItemNameToPrefab.Add("SmallPack", AddressablesController._Instance._SmallPackItem);
+        _ItemNameToPrefab.Add("Apple2", AddressablesController._Instance._ItemContainer);
+        _ItemNameToPrefab.Add("Apple3", AddressablesController._Instance._ItemContainer);
+        _ItemNameToPrefab.Add("Apple4", AddressablesController._Instance._ItemContainer);
+        _ItemNameToPrefab.Add("Apple5", AddressablesController._Instance._ItemContainer);
+        _ItemNameToPrefab.Add("Apple6", AddressablesController._Instance._ItemContainer);
         //_ItemNameToPrefab.Add("Copper Coin", AddressablesController._Instance._AppleItem);
 
 
         _ItemNameToSprite = new Dictionary<string, AssetReferenceSprite>();
         _ItemNameToSprite.Add("Apple", AddressablesController._Instance._AppleSprite);
+        _ItemNameToSprite.Add("ChestArmor_1", AddressablesController._Instance._ChestArmor_1Sprite);
+        _ItemNameToSprite.Add("LongSword_1", AddressablesController._Instance._LongSword_1Sprite);
+        _ItemNameToSprite.Add("SmallPack", AddressablesController._Instance._SmallPackSprite);
+        _ItemNameToSprite.Add("Apple2", AddressablesController._Instance._AppleSprite);
+        _ItemNameToSprite.Add("Apple3", AddressablesController._Instance._AppleSprite);
+        _ItemNameToSprite.Add("Apple4", AddressablesController._Instance._AppleSprite);
+        _ItemNameToSprite.Add("Apple5", AddressablesController._Instance._AppleSprite);
+        _ItemNameToSprite.Add("Apple6", AddressablesController._Instance._AppleSprite);
         //_ItemNameToSprite.Add("Copper Coin", AddressablesController._Instance._AppleSprite);
+
+        _AnimNameToAttackStartTime = new Dictionary<string, float>();
+        _AnimNameToAttackEndTime = new Dictionary<string, float>();
+        _AnimNameToAttackStartTime.Add("Right_Punch", 0.2f);
+        _AnimNameToAttackEndTime.Add("Right_Punch", 0.45f);
+        _AnimNameToAttackStartTime.Add("Left_Punch", 0.2f);
+        _AnimNameToAttackEndTime.Add("Left_Punch", 0.45f);
+        _AnimNameToAttackStartTime.Add("Right_Kick", 0.2f);
+        _AnimNameToAttackEndTime.Add("Right_Kick", 0.45f);
+        _AnimNameToAttackStartTime.Add("Left_Kick", 0.2f);
+        _AnimNameToAttackEndTime.Add("Left_Kick", 0.45f);
+        _AnimNameToAttackStartTime.Add("LongSword_Right", 0.3f);
+        _AnimNameToAttackEndTime.Add("LongSword_Right", 0.5f);
+        _AnimNameToAttackStartTime.Add("LongSword_Left", 0.3f);
+        _AnimNameToAttackEndTime.Add("LongSword_Left", 0.5f);
+
     }
     #region CommonMethods
     public Sprite TextureToSprite(Texture texture)
@@ -408,7 +523,8 @@ public class GameManager : MonoBehaviour
 
     public bool RandomPercentageChance(float percentage)
     {
-        return percentage >= UnityEngine.Random.Range(float.MinValue, 100f);
+        if (percentage == 0f) return false;
+        return percentage >= UnityEngine.Random.Range(0f, 100f);
     }
 
     public void CoroutineCall(ref Coroutine coroutine, IEnumerator method, MonoBehaviour script)
@@ -525,9 +641,12 @@ public class GameManager : MonoBehaviour
             _ObjectRotationsInChunk[chunk.x, chunk.y] = new List<Vector3>();
         if (_ObjectParentsInChunk[chunk.x, chunk.y] == null)
             _ObjectParentsInChunk[chunk.x, chunk.y] = new List<Transform>();
+        if (_ObjectItemHandleData[chunk.x, chunk.y] == null)
+            _ObjectItemHandleData[chunk.x, chunk.y] = new List<ItemHandleData>();
         _ObjectPositionsInChunk[chunk.x, chunk.y].Add(pos);
         _ObjectRotationsInChunk[chunk.x, chunk.y].Add(angles);
         _ObjectParentsInChunk[chunk.x, chunk.y].Add(parent);
+        _ObjectItemHandleData[chunk.x, chunk.y].Add(itemHandleData);
 
         itemHandleData._XChunk = chunk.x;
         itemHandleData._YChunk = chunk.y;
@@ -543,11 +662,13 @@ public class GameManager : MonoBehaviour
         if (_ObjectPositionsInChunk[x, y] == null || i >= _ObjectPositionsInChunk[x, y].Count) return;
         if (_ObjectRotationsInChunk[x, y] == null || i >= _ObjectRotationsInChunk[x, y].Count) return;
         if (_ObjectParentsInChunk[x, y] == null || i >= _ObjectParentsInChunk[x, y].Count) return;
+        if (_ObjectItemHandleData[x, y] == null || i >= _ObjectItemHandleData[x, y].Count) return;
 
         _ObjectsInChunk[x, y].RemoveAt(i);
         _ObjectPositionsInChunk[x, y].RemoveAt(i);
         _ObjectRotationsInChunk[x, y].RemoveAt(i);
         _ObjectParentsInChunk[x, y].RemoveAt(i);
+        _ObjectItemHandleData[x, y].RemoveAt(i);
 
         ReloadChunk(x, y);
     }
@@ -627,6 +748,7 @@ public class GameManager : MonoBehaviour
 
         WorldHandler._Instance._Player._MuscleLevel = WorldHandler._Instance._Player._DnaData["upperMuscle"];
         WorldHandler._Instance._Player._FatLevel = WorldHandler._Instance._Player._DnaData["upperWeight"];
+        WorldHandler._Instance._Player._Height = WorldHandler._Instance._Player._DnaData["height"];
     }
     public void StartValuesForNewGame()
     {
@@ -641,16 +763,16 @@ public class GameManager : MonoBehaviour
         }
         else
         {
-            Debug.LogError("Player Character Not Set!");
+            //Debug.LogError("Player Character Not Set!");
+            WorldHandler._Instance._Player._IsMale = true;
             NPCManager.SetGender(WorldHandler._Instance._Player._UmaDynamicAvatar, WorldHandler._Instance._Player._IsMale);
             SetRandomDNA(WorldHandler._Instance._Player);
             SetRandomWardrobe(WorldHandler._Instance._Player, WorldHandler._Instance._Player._IsMale);
         }
 
-        ushort numberOfNpcs = 1;
         NPC createdNpc;
         Vector2Int chunk;
-        for (int i = 0; i < numberOfNpcs; i++)
+        for (int i = 0; i < _NumberOfNpcs; i++)
         {
             createdNpc = Instantiate(PrefabHolder._Instance._NpcParent).GetComponent<NPC>();
             SetRandomNPCValues(createdNpc);
@@ -687,16 +809,23 @@ public class GameManager : MonoBehaviour
 
         human._MuscleLevel = Random.Range(0.15f, 0.5f);
         human._FatLevel = Random.Range(0.15f, 0.75f);
-        float headSize = 0.41f + (human._FatLevel * 1.5f + human._MuscleLevel) * 0.1f;
+        float headSize = 0.4f + (human._FatLevel * 0.5f + human._MuscleLevel) * 0.1f;
         float neckSize = (human._FatLevel / 2f) + (human._MuscleLevel / 2f);
+        if (!human._IsMale) { headSize -= 0.04f; neckSize += 0.05f; }
 
         foreach (var dnaName in dnaNames)
         {
             value = Random.Range(0.42f, 0.58f) + effectsAll;
-            if (dnaName == "armLength" || dnaName == "forearmLength" || dnaName == "feetSize" || dnaName == "handsSize" || dnaName == "legsSize")
+            if (dnaName == "feetSize")
+                value = 0.435f;
+            else if (dnaName == "armLength" || dnaName == "forearmLength" || dnaName == "handsSize" || dnaName == "legsSize")
                 value = 0.5f;
             else if (dnaName == "height")
-                value = 0.5f + effectsAll * 1.8f;
+            {
+                value = 0.55f + effectsAll * 1.5f;
+                if (!human._IsMale) value -= 0.1f;
+                human._Height = value;
+            }
             else if (dnaName == "headSize")
                 value = headSize;
             else if (dnaName == "neckThickness")
@@ -714,8 +843,7 @@ public class GameManager : MonoBehaviour
         if (human._CharacterColors == null)
             human._CharacterColors = new Dictionary<string, Color>();
 
-        float skinValue = Random.Range(0f, 2f);
-        if (skinValue > 1f) skinValue /= 2f;
+        float skinValue = Mathf.Pow(Random.Range(0.2f, 1f), 0.25f);
         Color color = new Color(skinValue, skinValue, skinValue, 1f);
 
         if (human._CharacterColors.ContainsKey("Skin"))
@@ -726,12 +854,9 @@ public class GameManager : MonoBehaviour
         if (avatar != null)
             NPCManager.ChangeColor(avatar, "Skin", color);
 
-        float redValue = Random.Range(0.1f, 0.6f);
-        float greenValue = Random.Range(0.1f, 0.6f);
-        float blueValue = Random.Range(0.1f, 0.6f);
-        if (redValue > 0.3f) redValue /= 2f;
-        if (greenValue > 0.3f) greenValue /= 2f;
-        if (blueValue > 0.3f) blueValue /= 2f;
+        float redValue = Random.Range(0.1f, 0.5f);
+        float greenValue = Random.Range(0.1f, 0.5f);
+        float blueValue = Random.Range(0.1f, 0.5f);
         color = new Color(redValue, greenValue, blueValue, 1f);
 
         if (human._CharacterColors.ContainsKey("Hair"))
@@ -745,9 +870,6 @@ public class GameManager : MonoBehaviour
         redValue = Random.Range(0.25f, 0.6f);
         greenValue = Random.Range(0.25f, 0.6f);
         blueValue = Random.Range(0.25f, 0.6f);
-        if (redValue > 0.3f) redValue /= 2f;
-        if (greenValue > 0.3f) greenValue /= 2f;
-        if (blueValue > 0.3f) blueValue /= 2f;
         color = new Color(redValue, greenValue, blueValue, 1f);
 
         if (human._CharacterColors.ContainsKey("Eyes"))
@@ -935,6 +1057,9 @@ public class GameManager : MonoBehaviour
     }
     public void CloseInGameMenuScreen()
     {
+        if (_InventoryCarryModeSlotUI != null)
+            _InventoryCarryModeSlotUI.CarryEnded(false);
+
         _InGameMenu.SetActive(false);
         _AnotherInventoryList.SetActive(false);
         _AnotherInventoryChestList.SetActive(false);
@@ -957,7 +1082,7 @@ public class GameManager : MonoBehaviour
         if (number == 0)
         {
             _InventoryScreen.SetActive(true);
-            UpdateInventoryUI();
+            UpdateInventoryUIBuffer();
         }
         else if (number == 1)
         {
@@ -970,6 +1095,9 @@ public class GameManager : MonoBehaviour
     }
     private void CloseAllInGameMenus()
     {
+        if (_InventoryCarryModeSlotUI != null)
+            _InventoryCarryModeSlotUI.CarryEnded(false);
+
         _InventoryScreen.SetActive(false);
         _MapScreen.SetActive(false);
         _DialogueScreen.SetActive(false);
@@ -1020,8 +1148,10 @@ public class GameManager : MonoBehaviour
         {
             int c = i;
             created = Instantiate(PrefabHolder._Instance._LoadPrefab, GameObject.FindGameObjectWithTag("UI").transform.Find("UIMain").Find("Load").Find("Saves"));
+            GamepadMouse._Instance._RectTransformTargets.Add(created.GetComponent<RectTransform>());
             created.GetComponent<Button>().onClick.AddListener(() => PlayButtonSound());
             created.GetComponent<Button>().onClick.AddListener(() => { SaveSystemHandler._Instance._ActiveSave = c; LoadScene(1); });
+            GamepadMouse._Instance._RectTransformTargets.Add(created.transform.Find("DeleteButton").GetComponent<RectTransform>());
             created.transform.Find("DeleteButton").GetComponent<Button>().onClick.AddListener(() => PlayButtonSound());
             created.transform.Find("DeleteButton").GetComponent<Button>().onClick.AddListener(() => OpenDeleteSaveScreen(c));
         }
@@ -1087,92 +1217,183 @@ public class GameManager : MonoBehaviour
         }
     }
 
-    public void TakeOrSendFromInteractMenu()
+    public void TakeOrSendFromInteractMenu(bool isBackCarry)
     {
-        TakeOrSendFromInteractCommon(_LastClickedSlotUI._ItemRef);
-        _InventoryItemInteractPopup.SetActive(false);
+        if (_InteractMenuSlotUI == null || _InteractMenuSlotUI._ItemRef == null) return;
+        TakeOrSend(_InteractMenuSlotUI, isBackCarry, false);
     }
-    private void TakeOrSendFromInteractCommon(Item item)
+    public void TakeOrSend(InventorySlotUI slotUI, bool isBackCarry, bool isSendingAll)
     {
-        bool isTake = !_LastClickedSlotUI._IsPlayerInventory;
-        if (isTake)
-            item.Take(WorldHandler._Instance._Player._Inventory);
-        else if (_AnotherInventory != null)
-            item.Take(_AnotherInventory);
-    }
+        if (slotUI._ItemRef is CarryItem && isBackCarry) { Debug.LogError("carry item cannot go into the carry inventory!"); return; }
 
-    public void EquipOrUnequipFromInteractMenu()
-    {
-        if (!_LastClickedSlotUI._ItemRef._ItemDefinition._CanBeEquipped) return;
-
-        bool isEquipped = _LastClickedSlotUI._ItemRef._IsEquipped;
-        if (isEquipped)
-            _LastClickedSlotUI._ItemRef.Unequip(false, true);
+        if (slotUI._ItemRef is ICanBeEquipped)
+            TakeOrSendCommon(slotUI._ItemRef, isBackCarry, slotUI._IsPlayerInventory, slotUI._IsBackCarryInventory);
         else
-            _LastClickedSlotUI._ItemRef.Equip(WorldHandler._Instance._Player._Inventory);
-
+            TakeOrSendWithSplit(slotUI, isBackCarry, isSendingAll);
         _InventoryItemInteractPopup.SetActive(false);
     }
-    public void ConsumeItemFromInteractMenu()
+    private bool TakeOrSendCommon(Item itemref, bool isBackCarry, bool isPlayerInventory, bool isBackCarryInventory)
     {
-        if (_LastClickedSlotUI._ItemRef._ItemDefinition is ICanBeConsumed iConsumed)
+        if (isBackCarry && (isPlayerInventory ? WorldHandler._Instance._Player._BackCarryItemRef == null : _AnotherInventory?._InventoryHolder?._Human?._BackCarryItemRef == null)) return false;
+
+        Inventory takerInventory = null;
+        if (isBackCarry)
+            takerInventory = isBackCarryInventory ? (isPlayerInventory ? WorldHandler._Instance._Player._Inventory : _AnotherInventory) : (isPlayerInventory ? (WorldHandler._Instance._Player._BackCarryItemRef as CarryItem)?._Inventory : (_AnotherInventory?._InventoryHolder?._Human?._BackCarryItemRef as CarryItem)?._Inventory);
+        else
+            takerInventory = isPlayerInventory ? _AnotherInventory : WorldHandler._Instance._Player._Inventory;
+
+        if (takerInventory == null)
         {
-            iConsumed.Consume(_LastClickedSlotUI._ItemRef);
-            _InventoryItemInteractPopup.SetActive(false);
+            Debug.Log("target inv is null, dropping.");
+            if (itemref._IsEquipped)
+                itemref.Unequip(true, false);
+            else
+                itemref.DropFrom(true);
         }
+        else
+        {
+            if (!takerInventory.CanTakeThisItem(itemref)) return false;
+            if (itemref._IsEquipped)
+                itemref.Unequip(false, false);
+
+            itemref.TakenTo(takerInventory);
+        }
+        return true;
     }
-    public void SplitItemFromInteractMenu()
+    public void TakeOrSendWithSplit(InventorySlotUI slotUI, bool isBackCarry, bool isSendingAll)
     {
-        if (_SplitAmount == 0) return;
-        if (_LastClickedSlotUI == null) return;
-        if (_LastClickedSlotUI._ItemRef._Count < _SplitAmount) return;
+        if (slotUI == null || slotUI._ItemRef == null) return;
+        int amount = isSendingAll ? slotUI._ItemRef._Count : _SplitAmount;
+        if (amount == 0) return;
+        if (slotUI._ItemRef is ICanBeEquipped) return;
+        if (slotUI._ItemRef._Count < amount) return;
 
-        Item splitItem = _LastClickedSlotUI._ItemRef.Copy();
+        Item splitItem = slotUI._ItemRef.Copy();
         splitItem._IsSplittingBuffer = true;
-        splitItem._Count = _SplitAmount;
-        _LastClickedSlotUI._ItemRef._Count -= _SplitAmount;
+        splitItem._Count = amount;
 
-        TakeOrSendFromInteractCommon(splitItem);
-
-        if (_LastClickedSlotUI._ItemRef._Count == 0)
-            _LastClickedSlotUI._ItemRef.Drop(false);
+        bool isProcessed = TakeOrSendCommon(splitItem, isBackCarry, slotUI._IsPlayerInventory, slotUI._IsBackCarryInventory);
+        if (isProcessed)
+        {
+            slotUI._ItemRef._Count -= amount;
+            if (slotUI._ItemRef._Count == 0)
+                slotUI._ItemRef.DropFrom(false);
+        }
 
         _InventoryItemInteractPopup.SetActive(false);
     }
     public void SplitAmountArrange(float normalizedSplit)
     {
-        if (_LastClickedSlotUI == null) return;
+        if (_InteractMenuSlotUI == null) return;
+        normalizedSplit = normalizedSplit > 1f ? 1f : normalizedSplit;
+        _InventoryItemInteractPopup.transform.Find("SplitSlider").GetComponent<Slider>().value = normalizedSplit;
 
-        _SplitAmount = Mathf.RoundToInt(_LastClickedSlotUI._ItemRef._Count * normalizedSplit);
-        _InventoryItemInteractPopup.transform.Find("Split").GetComponent<Button>().interactable = _SplitAmount > 0;
-        _InventoryItemInteractPopup.transform.Find("Split").Find("SplitAmountText").GetComponent<TextMeshProUGUI>().text = _SplitAmount.ToString();
+        _SplitAmount = Mathf.RoundToInt(_InteractMenuSlotUI._ItemRef._Count * normalizedSplit);
+        _InventoryItemInteractPopup.transform.Find("SplitSlider").Find("SplitAmountText").GetComponent<TextMeshProUGUI>().text = _SplitAmount.ToString();
+        _InventoryItemInteractPopup.transform.Find("TakeSend").GetComponent<Button>().interactable = _SplitAmount != 0 || _InteractMenuSlotUI._ItemRef is ICanBeEquipped;
+        _InventoryItemInteractPopup.transform.Find("TakeSendBackCarry").GetComponent<Button>().interactable = (_SplitAmount != 0 || _InteractMenuSlotUI._ItemRef is ICanBeEquipped) && IsInventoryHaveBackCarryOrSelf(_InteractMenuSlotUI._ItemRef._AttachedInventoryCommon) && !(_InteractMenuSlotUI._ItemRef is CarryItem);
+    }
+    public void UpdateSliderFromCursor(Slider slider, Vector3 pos)
+    {
+        RectTransform sliderRect = slider.GetComponent<RectTransform>();
+        Vector2 localPos;
+
+        RectTransformUtility.ScreenPointToLocalPointInRectangle(
+            sliderRect,
+            pos,
+            null,
+            out localPos
+        );
+
+        float normalized = Mathf.InverseLerp(
+            sliderRect.rect.xMin,
+            sliderRect.rect.xMax,
+            localPos.x
+        );
+
+        slider.value = normalized;
+    }
+    private Slider GetOnSplitSlider()
+    {
+        Vector2 screenPos = RectTransformUtility.WorldToScreenPoint(null, Input.mousePosition);
+        PointerEventData pointerData = new PointerEventData(EventSystem.current)
+        {
+            position = screenPos,
+            radius = Vector2.one
+        };
+        List<RaycastResult> results = new List<RaycastResult>();
+        _GraphicRaycaster.Raycast(pointerData, results);
+        Slider realSlider = null;
+        bool isBlocked = false;
+        foreach (var item in results)
+        {
+            if (item.gameObject != null && item.gameObject.name.Equals("SliderBlocker"))
+                isBlocked = true;
+            if (item.gameObject != null && item.gameObject.name == "Background" && item.gameObject.transform.parent.TryGetComponent<Slider>(out Slider slider) && slider.name.Equals("SplitSlider"))
+                realSlider = slider;
+        }
+        if (isBlocked) realSlider = null;
+        return realSlider;
+    }
+    public void EquipOrUnequipFromInteractMenu()
+    {
+        if (!_InteractMenuSlotUI._ItemRef._ItemDefinition._CanBeEquipped) return;
+
+        bool isEquipped = _InteractMenuSlotUI._ItemRef._IsEquipped;
+        if (isEquipped)
+            _InteractMenuSlotUI._ItemRef.Unequip(false, true);
+        else
+            _InteractMenuSlotUI._ItemRef.Equip(WorldHandler._Instance._Player._Inventory);
+
+        _InventoryItemInteractPopup.SetActive(false);
+    }
+    public void ConsumeItemFromInteractMenu()
+    {
+        if (_InteractMenuSlotUI._ItemRef._ItemDefinition is ICanBeConsumed iConsumed)
+        {
+            iConsumed.Consume(_InteractMenuSlotUI._ItemRef);
+            _InventoryItemInteractPopup.SetActive(false);
+        }
+    }
+
+    public bool IsInventoryHaveBackCarryOrSelf(Inventory inventory)
+    {
+        if (inventory._IsBackCarry) return true;
+        if (inventory._IsHuman && inventory._InventoryHolder?._Human?._BackCarryItemRef != null) return true;
+        return false;
     }
     public void TakeAllButton(int i)
     {
         switch (i)
         {
             case 0:
-                TakeAll(_anotherInventoryChestImages);
+                TakeAll(_anotherInventoryChestImages, WorldHandler._Instance._Player._Inventory);
                 break;
             case 1:
-                TakeAll(_anotherInventoryImages);
+                TakeAll(_anotherInventoryImages, WorldHandler._Instance._Player._Inventory);
                 break;
             case 2:
-                TakeAll(_anotherEquipmentImages);
+                TakeAll(_anotherEquipmentImages, WorldHandler._Instance._Player._Inventory);
                 break;
             case 3:
-                TakeAll(_anotherInventoryBackCarryImages);
+                TakeAll(_anotherInventoryBackCarryImages, WorldHandler._Instance._Player._Inventory);
                 break;
             default:
                 break;
         }
     }
-    private void TakeAll(Image[] itemImages)
+    public void TakeAll(Image[] itemImages, Inventory takerInventory)
     {
-        for (int i = 0; i < itemImages.Length; i++)
+        List<Item> tempItems = new List<Item>();
+        foreach (var itemImage in itemImages)
         {
-            if (itemImages[i].GetComponent<InventorySlotUI>()._ItemRef != null)
-                itemImages[i].GetComponent<InventorySlotUI>()._ItemRef.Take(WorldHandler._Instance._Player._Inventory);
+            tempItems.Add(itemImage.GetComponent<InventorySlotUI>()._ItemRef);
+        }
+
+        for (int i = 0; i < tempItems.Count; i++)
+        {
+            if (tempItems[i] != null)
+                tempItems[i].TakenTo(takerInventory);
         }
     }
 
@@ -1187,16 +1408,183 @@ public class GameManager : MonoBehaviour
         OpenInGameMenuScreen();
         OpenInGameMenu(0);
     }
-    public void UpdateInventoryUI()
+    private float GetAvarageFps()
+    {
+        int count = 0;
+        float sum = 0f;
+        foreach (float value in _fpsValues)
+        {
+            count++;
+            sum += value;
+        }
+        return sum / count;
+    }
+    public void UpdateInGameUI(float staminaNormalized)
+    {
+        if (Time.unscaledDeltaTime != 0f)
+        {
+            _fpsValues.Enqueue(1f / Time.unscaledDeltaTime);
+            if (_fpsValues.Count > 60)
+                _fpsValues.Dequeue();
+            _FpsText.text = GetAvarageFps().ToString("F0");
+        }
+        else
+            _FpsText.text = 0f.ToString("F0");
+
+        _StaminaHUDRect.localScale = new Vector3(staminaNormalized, 1f, 1f);
+
+        Color color = GetNormalizedColor(staminaNormalized);
+        color.a = (1 - staminaNormalized) * 0.75f;
+        _StaminaHUDImage.color = color;
+
+        color = _StaminaBackgroundHUDImage.color;
+        color.a = Mathf.Clamp01((1f - staminaNormalized) * 10f) * 0.75f;
+        _StaminaBackgroundHUDImage.color = color;
+
+        ArrangeHealthHUD();
+    }
+    private void ArrangeHealthHUD()
+    {
+        Player player = WorldHandler._Instance._Player;
+        if (player._HealthSystem._IsDead)
+            OpenOrCloseHealthUI(_HealthInfoHUD.transform.Find("Dead").gameObject, true);
+        else
+            OpenOrCloseHealthUI(_HealthInfoHUD.transform.Find("Dead").gameObject, false);
+
+        if (player._HealthSystem._IsUnconscious)
+            OpenOrCloseHealthUI(_HealthInfoHUD.transform.Find("Unconscious").gameObject, true);
+        else
+            OpenOrCloseHealthUI(_HealthInfoHUD.transform.Find("Unconscious").gameObject, false);
+
+        if (player._HealthSystem._BloodLevel < 100f)
+        {
+            OpenOrCloseHealthUI(_HealthInfoHUD.transform.Find("BloodLevel").gameObject, true);
+            float amount = player._HealthSystem._BloodLevel / 100f;
+            _HealthInfoHUD.transform.Find("BloodLevel").Find("SlicedImage").GetComponent<SlicedFilledImage>().fillAmount = amount;
+            _HealthInfoHUD.transform.Find("BloodLevel").GetComponent<Image>().color = new Color(1f, 1f, 1f, Mathf.Pow(1f - amount, 0.4f));
+            _HealthInfoHUD.transform.Find("BloodLevel").Find("SlicedImage").GetComponent<SlicedFilledImage>().color = new Color(1f, 0f, 0f, Mathf.Pow(1f - amount, 0.4f));
+        }
+        else
+            OpenOrCloseHealthUI(_HealthInfoHUD.transform.Find("BloodLevel").gameObject, false);
+
+        if (player._HealthSystem._BleedingOverTime != 0f)
+        {
+            OpenOrCloseHealthUI(_HealthInfoHUD.transform.Find("Bleeding").gameObject, true);
+            float amount = player._HealthSystem._BleedingOverTime / player._HealthSystem._BleedingMaxValue;
+            _HealthInfoHUD.transform.Find("Bleeding").Find("SlicedImage").GetComponent<SlicedFilledImage>().fillAmount = amount;
+            _HealthInfoHUD.transform.Find("Bleeding").GetComponent<Image>().color = new Color(1f, 1f, 1f, Mathf.Pow(amount, 0.4f));
+            _HealthInfoHUD.transform.Find("Bleeding").Find("SlicedImage").GetComponent<SlicedFilledImage>().color = new Color(1f, 0f, 0f, Mathf.Pow(amount, 0.4f));
+        }
+        else
+            OpenOrCloseHealthUI(_HealthInfoHUD.transform.Find("Bleeding").gameObject, false);
+
+        if (player._HealthSystem._Sickness != 0f)
+        {
+            OpenOrCloseHealthUI(_HealthInfoHUD.transform.Find("Sickness").gameObject, true);
+            float amount = player._HealthSystem._Sickness / 100f;
+            _HealthInfoHUD.transform.Find("Sickness").Find("SlicedImage").GetComponent<SlicedFilledImage>().fillAmount = amount;
+            _HealthInfoHUD.transform.Find("Sickness").GetComponent<Image>().color = new Color(1f, 1f, 1f, Mathf.Pow(amount, 0.4f));
+            _HealthInfoHUD.transform.Find("Sickness").Find("SlicedImage").GetComponent<SlicedFilledImage>().color = new Color(1f, 0f, 0f, Mathf.Pow(amount, 0.4f));
+        }
+        else
+            OpenOrCloseHealthUI(_HealthInfoHUD.transform.Find("Sickness").gameObject, false);
+
+        if (player._HealthSystem._HeadWoundAmount != 0f)
+        {
+            OpenOrCloseHealthUI(_HealthInfoHUD.transform.Find("HeadDamage").gameObject, true);
+            float amount = player._HealthSystem._HeadWoundAmount / 100f;
+            _HealthInfoHUD.transform.Find("HeadDamage").Find("SlicedImage").GetComponent<SlicedFilledImage>().fillAmount = amount;
+            _HealthInfoHUD.transform.Find("HeadDamage").GetComponent<Image>().color = new Color(1f, 1f, 1f, Mathf.Pow(amount, 0.4f));
+            _HealthInfoHUD.transform.Find("HeadDamage").Find("SlicedImage").GetComponent<SlicedFilledImage>().color = new Color(1f, 0f, 0f, Mathf.Pow(amount, 0.4f));
+        }
+        else
+            OpenOrCloseHealthUI(_HealthInfoHUD.transform.Find("HeadDamage").gameObject, false);
+
+        if (player._HealthSystem._HandsWoundAmount != 0f)
+        {
+            OpenOrCloseHealthUI(_HealthInfoHUD.transform.Find("HandsDamage").gameObject, true);
+            float amount = player._HealthSystem._HandsWoundAmount / 100f;
+            _HealthInfoHUD.transform.Find("HandsDamage").Find("SlicedImage").GetComponent<SlicedFilledImage>().fillAmount = amount;
+            _HealthInfoHUD.transform.Find("HandsDamage").GetComponent<Image>().color = new Color(1f, 1f, 1f, Mathf.Pow(amount, 0.4f));
+            _HealthInfoHUD.transform.Find("HandsDamage").Find("SlicedImage").GetComponent<SlicedFilledImage>().color = new Color(1f, 0f, 0f, Mathf.Pow(amount, 0.4f));
+        }
+        else
+            OpenOrCloseHealthUI(_HealthInfoHUD.transform.Find("HandsDamage").gameObject, false);
+
+        if (player._HealthSystem._ChestWoundAmount != 0f)
+        {
+            OpenOrCloseHealthUI(_HealthInfoHUD.transform.Find("ChestDamage").gameObject, true);
+            float amount = player._HealthSystem._ChestWoundAmount / 100f;
+            _HealthInfoHUD.transform.Find("ChestDamage").Find("SlicedImage").GetComponent<SlicedFilledImage>().fillAmount = amount;
+            _HealthInfoHUD.transform.Find("ChestDamage").GetComponent<Image>().color = new Color(1f, 1f, 1f, Mathf.Pow(amount, 0.4f));
+            _HealthInfoHUD.transform.Find("ChestDamage").Find("SlicedImage").GetComponent<SlicedFilledImage>().color = new Color(1f, 0f, 0f, Mathf.Pow(amount, 0.4f));
+        }
+        else
+            OpenOrCloseHealthUI(_HealthInfoHUD.transform.Find("ChestDamage").gameObject, false);
+
+        if (player._HealthSystem._LegsWoundAmount != 0f)
+        {
+            OpenOrCloseHealthUI(_HealthInfoHUD.transform.Find("LegsDamage").gameObject, true);
+            float amount = player._HealthSystem._LegsWoundAmount / 100f;
+            _HealthInfoHUD.transform.Find("LegsDamage").Find("SlicedImage").GetComponent<SlicedFilledImage>().fillAmount = amount;
+            _HealthInfoHUD.transform.Find("LegsDamage").GetComponent<Image>().color = new Color(1f, 1f, 1f, Mathf.Pow(amount, 0.4f));
+            _HealthInfoHUD.transform.Find("LegsDamage").Find("SlicedImage").GetComponent<SlicedFilledImage>().color = new Color(1f, 0f, 0f, Mathf.Pow(amount, 0.4f));
+        }
+        else
+            OpenOrCloseHealthUI(_HealthInfoHUD.transform.Find("LegsDamage").gameObject, false);
+    }
+    private void OpenOrCloseHealthUI(GameObject uiObj, bool isOpening)
+    {
+        if (isOpening && !uiObj.activeSelf)
+            uiObj.SetActive(true);
+        else if (!isOpening && uiObj.activeSelf)
+            uiObj.SetActive(false);
+    }
+
+    private string FormatWeight(float value)
+    {
+        string formatted = value.ToString("F2");
+        string[] parts = formatted.Split(',');
+        if (parts.Length == 2)
+            return $"{parts[0]},<size=70%>{parts[1]}</size>";
+        else
+            return formatted;
+    }
+    public void UpdateInventoryUIBuffer()
+    {
+        _updateInventoryBuffer = true;
+    }
+    public void UpdateInventoryUIInstant()
+    {
+        UpdateInventoryUI();
+    }
+    private void UpdateInventoryUI()
     {
         if (!_InventoryScreen.activeSelf) return;
 
+        string formattedCurrent = FormatWeight(WorldHandler._Instance._Player._Inventory.GetCurrentCarryWeight(false));
+        string formattedLimit = FormatWeight(WorldHandler._Instance._Player._Inventory._CarryWeightLimit);
+        _InventoryScreen.transform.Find("OwnInventory").Find("Info").Find("WeightLimitText").GetComponent<TextMeshProUGUI>().text = $"{formattedCurrent} / {formattedLimit}";
+        formattedCurrent = FormatWeight(WorldHandler._Instance._Player._Inventory.GetCurrentCarryVolume());
+        formattedLimit = FormatWeight(WorldHandler._Instance._Player._Inventory._CarryVolumeLimit);
+        _InventoryScreen.transform.Find("OwnInventory").Find("Info").Find("VolumeLimitText").GetComponent<TextMeshProUGUI>().text = $"{formattedCurrent} / {formattedLimit}";
+
+        _InventoryScreen.transform.Find("OwnInventory").Find("Info").Find("NeedSleep").GetComponent<TextMeshProUGUI>().text = WorldHandler._Instance._Player._NeedSleepAmount.ToString();
+        _InventoryScreen.transform.Find("OwnInventory").Find("Info").Find("NeedCleaning").GetComponent<TextMeshProUGUI>().text = WorldHandler._Instance._Player._NeedCleaningAmount.ToString();
+        _InventoryScreen.transform.Find("OwnInventory").Find("Info").Find("NeedEat").GetComponent<TextMeshProUGUI>().text = WorldHandler._Instance._Player._NeedEatAmount.ToString();
+        _InventoryScreen.transform.Find("OwnInventory").Find("Info").Find("NeedDrink").GetComponent<TextMeshProUGUI>().text = WorldHandler._Instance._Player._NeedDrinkAmount.ToString();
+        _InventoryScreen.transform.Find("OwnInventory").Find("Info").Find("NeedPissing").GetComponent<TextMeshProUGUI>().text = WorldHandler._Instance._Player._NeedPissingAmount.ToString();
+        _InventoryScreen.transform.Find("OwnInventory").Find("Info").Find("NeedPooping").GetComponent<TextMeshProUGUI>().text = WorldHandler._Instance._Player._NeedPoopingAmount.ToString();
+
+        _InventoryScreen.transform.Find("PrivacyImage").gameObject.SetActive(false);
         _InventoryScreen.transform.Find("OwnInventory").Find("Name").GetComponentInChildren<TextMeshProUGUI>().text = WorldHandler._Instance._Player._Inventory._Name;
         UpdateOneInventory(WorldHandler._Instance._Player._Inventory, _playerInventoryImages, _playerInventoryBackCarryImages);
         UpdateEquipmentUI(WorldHandler._Instance._Player._Inventory, _playerEquipmentImages);
 
         if (_AnotherInventory != null)
         {
+            if (!_AnotherInventory._IsPublic)
+                _InventoryScreen.transform.Find("PrivacyImage").gameObject.SetActive(true);
 
             if (_AnotherInventory._IsHuman)
             {
@@ -1218,11 +1606,10 @@ public class GameManager : MonoBehaviour
             }
 
         }
-
     }
     private void UpdateEquipmentUI(Inventory inventory, Image[] equipmentImages)
     {
-        Humanoid human = inventory.GetComponent<Humanoid>();
+        Humanoid human = inventory._InventoryHolder?._Human;
         if (human == null) { Debug.LogError("human is null!"); return; }
         Item item = null;
         for (int i = 0; i < equipmentImages.Length; i++)
@@ -1230,25 +1617,25 @@ public class GameManager : MonoBehaviour
             switch (i)
             {
                 case 0:
-                    item = human._HeadGear;
+                    item = human._HeadGearItemRef;
                     break;
                 case 1:
-                    item = human._Gloves;
+                    item = human._GlovesItemRef;
                     break;
                 case 2:
                     item = human._BackCarryItemRef;
                     break;
                 case 3:
-                    item = human._Clothing;
+                    item = human._ClothingItemRef;
                     break;
                 case 4:
-                    item = human._ChestArmor;
+                    item = human._ChestArmorItemRef;
                     break;
                 case 5:
-                    item = human._LegsArmor;
+                    item = human._LegsArmorItemRef;
                     break;
                 case 6:
-                    item = human._Boots;
+                    item = human._BootsItemRef;
                     break;
                 case 7:
                     item = human._LeftHandEquippedItemRef;
@@ -1262,11 +1649,19 @@ public class GameManager : MonoBehaviour
             }
 
             if (item == null)
-                equipmentImages[i].sprite = _equipmentSlotDefaultImages[i];
+            {
+                equipmentImages[i].GetComponent<InventorySlotUI>()._ItemRef = null;
+                equipmentImages[i].GetComponent<InventorySlotUI>()._Inventory = inventory;
+                equipmentImages[i].transform.Find("DynamicImage").GetComponent<Image>().sprite = _equipmentSlotDefaultImages[i];
+            }
             else
-                SetSprite(equipmentImages[i], item._ItemDefinition._Name);
+            {
+                equipmentImages[i].GetComponent<InventorySlotUI>()._ItemRef = item;
+                equipmentImages[i].GetComponent<InventorySlotUI>()._Inventory = inventory;
+                SetSpriteUI(equipmentImages[i].transform.Find("DynamicImage").GetComponent<Image>(), item._ItemDefinition._Name);
+            }
 
-            SetDurability(equipmentImages[i], item);
+            SetDurabilityAndCountUI(equipmentImages[i], item);
         }
     }
     private void UpdateOneInventory(Inventory inventory, Image[] ownItemImageComponents, Image[] carryingInventoryItemImageComponents)
@@ -1277,6 +1672,7 @@ public class GameManager : MonoBehaviour
             if (i >= itemCount)
             {
                 ownItemImageComponents[i].GetComponent<InventorySlotUI>()._ItemRef = null;
+                ownItemImageComponents[i].GetComponent<InventorySlotUI>()._Inventory = inventory;
                 ownItemImageComponents[i].sprite = PrefabHolder._Instance._EmptyItemBackground;
                 ownItemImageComponents[i].transform.Find("Count").gameObject.SetActive(false);
                 ownItemImageComponents[i].transform.Find("DurabilityBackground").gameObject.SetActive(false);
@@ -1284,14 +1680,15 @@ public class GameManager : MonoBehaviour
             else
             {
                 ownItemImageComponents[i].GetComponent<InventorySlotUI>()._ItemRef = inventory._Items[i];
+                ownItemImageComponents[i].GetComponent<InventorySlotUI>()._Inventory = inventory;
                 ownItemImageComponents[i].sprite = PrefabHolder._Instance._LoadingAdressableProcessSprite;
                 int iForAction = i;
-                SetSprite(ownItemImageComponents[iForAction], inventory._Items[iForAction]._ItemDefinition._Name);
-                SetDurability(ownItemImageComponents[iForAction], inventory._Items[iForAction]);
+                SetSpriteUI(ownItemImageComponents[iForAction], inventory._Items[iForAction]._ItemDefinition._Name);
+                SetDurabilityAndCountUI(ownItemImageComponents[iForAction], inventory._Items[iForAction]);
             }
         }
         if (!inventory._CanEquip) { }
-        else if (inventory.GetComponent<Humanoid>()._BackCarryItemRef == null)
+        else if (inventory._InventoryHolder._Human._BackCarryItemRef == null)
         {
             carryingInventoryItemImageComponents[0].transform.parent.GetComponent<Image>().color = new Color(1f, 1f, 1f, 0.07f);
             carryingInventoryItemImageComponents[0].transform.parent.parent.Find("BackCarryFrame").GetComponent<Image>().color = new Color(1f, 1f, 1f, 0.07f);
@@ -1299,6 +1696,7 @@ public class GameManager : MonoBehaviour
             {
                 carryingInventoryItemImageComponents[i].color = new Color(1f, 1f, 1f, 0.07f);
                 carryingInventoryItemImageComponents[i].GetComponent<InventorySlotUI>()._ItemRef = null;
+                carryingInventoryItemImageComponents[i].GetComponent<InventorySlotUI>()._Inventory = inventory;
                 carryingInventoryItemImageComponents[i].sprite = PrefabHolder._Instance._EmptyItemBackground;
                 carryingInventoryItemImageComponents[i].transform.Find("Count").gameObject.SetActive(false);
                 carryingInventoryItemImageComponents[i].transform.Find("DurabilityBackground").gameObject.SetActive(false);
@@ -1306,7 +1704,8 @@ public class GameManager : MonoBehaviour
         }
         else
         {
-            itemCount = (inventory.GetComponent<Humanoid>()._BackCarryItemRef as IHaveInventory)._Inventory._Items.Count;
+            inventory = (inventory._InventoryHolder._Human._BackCarryItemRef as CarryItem)._Inventory;
+            itemCount = inventory._Items.Count;
 
             carryingInventoryItemImageComponents[0].transform.parent.GetComponent<Image>().color = new Color(1f, 1f, 1f, 1f);
             carryingInventoryItemImageComponents[0].transform.parent.parent.Find("BackCarryFrame").GetComponent<Image>().color = new Color(1f, 1f, 1f, 0.8f);
@@ -1316,6 +1715,7 @@ public class GameManager : MonoBehaviour
                 if (i >= itemCount)
                 {
                     carryingInventoryItemImageComponents[i].GetComponent<InventorySlotUI>()._ItemRef = null;
+                    carryingInventoryItemImageComponents[i].GetComponent<InventorySlotUI>()._Inventory = inventory;
                     carryingInventoryItemImageComponents[i].sprite = PrefabHolder._Instance._EmptyItemBackground;
                     carryingInventoryItemImageComponents[i].transform.Find("Count").gameObject.SetActive(false);
                     carryingInventoryItemImageComponents[i].transform.Find("DurabilityBackground").gameObject.SetActive(false);
@@ -1323,15 +1723,16 @@ public class GameManager : MonoBehaviour
                 else
                 {
                     carryingInventoryItemImageComponents[i].GetComponent<InventorySlotUI>()._ItemRef = inventory._Items[i];
+                    carryingInventoryItemImageComponents[i].GetComponent<InventorySlotUI>()._Inventory = inventory;
                     carryingInventoryItemImageComponents[i].sprite = PrefabHolder._Instance._LoadingAdressableProcessSprite;
                     int iForAction = i;
-                    SetSprite(carryingInventoryItemImageComponents[iForAction], inventory._Items[iForAction]._ItemDefinition._Name);
-                    SetDurability(carryingInventoryItemImageComponents[iForAction], inventory._Items[iForAction]);
+                    SetSpriteUI(carryingInventoryItemImageComponents[iForAction], inventory._Items[iForAction]._ItemDefinition._Name);
+                    SetDurabilityAndCountUI(carryingInventoryItemImageComponents[iForAction], inventory._Items[iForAction]);
                 }
             }
         }
     }
-    private void SetDurability(Image image, Item item)
+    public void SetDurabilityAndCountUI(Image image, Item item)
     {
         if (item == null)
         {
@@ -1341,22 +1742,24 @@ public class GameManager : MonoBehaviour
             return;
         }
 
-        if (item is IHaveItemDurability)
+        if (item is ICanBeEquipped)
         {
-            image.transform.Find("Count").gameObject.SetActive(false);
+            if (image.transform.Find("Count") != null)
+                image.transform.Find("Count").gameObject.SetActive(false);
             image.transform.Find("DurabilityBackground").gameObject.SetActive(true);
-            float normalizedDurability = (item as IHaveItemDurability)._Durability / (item as IHaveItemDurability)._DurabilityMax;
-            image.transform.Find("DurabilityBackground").Find("Durability").GetComponent<Image>().color = GetDurabilityColor(normalizedDurability);
+            float normalizedDurability = (item as ICanBeEquipped)._Durability / (item as ICanBeEquipped)._DurabilityMax;
+            image.transform.Find("DurabilityBackground").Find("Durability").GetComponent<Image>().color = GetNormalizedColor(normalizedDurability);
             image.transform.Find("DurabilityBackground").Find("Durability").GetComponent<RectTransform>().localScale = new Vector3(normalizedDurability, 1f, 1f);
         }
         else
         {
-            image.transform.Find("DurabilityBackground").gameObject.SetActive(false);
+            if (image.transform.Find("DurabilityBackground") != null)
+                image.transform.Find("DurabilityBackground").gameObject.SetActive(false);
             image.transform.Find("Count").gameObject.SetActive(true);
             image.transform.Find("Count").GetComponent<TextMeshProUGUI>().text = item._Count.ToString();
         }
     }
-    private void SetSprite(Image image, string itemName)
+    private void SetSpriteUI(Image image, string itemName)
     {
         if (!_nameToLoadedSprites.ContainsKey(itemName))
         {
@@ -1375,7 +1778,7 @@ public class GameManager : MonoBehaviour
         }
     }
 
-    private Color GetDurabilityColor(float normalizedDurability)
+    private Color GetNormalizedColor(float normalizedDurability)
     {
         if (normalizedDurability < 0.5f)
         {
@@ -1387,6 +1790,22 @@ public class GameManager : MonoBehaviour
             float t = (normalizedDurability - 0.5f) / 0.5f;
             return Color.Lerp(Color.yellow, Color.green, t);
         }
+    }
+    public GameObject GetInventorySlotUIFromPosition(Vector3 pos)
+    {
+        Vector2 screenPos = RectTransformUtility.WorldToScreenPoint(null, pos);
+        PointerEventData pointerData = new PointerEventData(EventSystem.current)
+        {
+            position = screenPos
+        };
+        List<RaycastResult> results = new List<RaycastResult>();
+        _GraphicRaycaster.Raycast(pointerData, results);
+        foreach (var item in results)
+        {
+            if (item.gameObject != null && item.gameObject.GetComponent<InventorySlotUI>() != null)
+                return item.gameObject;
+        }
+        return null;
     }
     public void Slowtime(float time)
     {

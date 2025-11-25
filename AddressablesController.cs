@@ -5,16 +5,24 @@ using UnityEngine.ResourceManagement.AsyncOperations;
 
 public class AddressablesController : MonoBehaviour
 {
+    public static AddressablesController _Instance;
     #region Prefabs
     [SerializeField] private AssetReferenceGameObject _treePrefab;
     #region Items
 
-    public AssetReferenceGameObject _AppleItem;
+    public AssetReferenceGameObject _ItemContainer;
+    public AssetReferenceGameObject _SmallPackItem;
+    public AssetReferenceGameObject _ChestArmor_1Item;
+    public AssetReferenceGameObject _LongSword_1Item;
+
     public AssetReferenceSprite _AppleSprite;
+    public AssetReferenceSprite _SmallPackSprite;
+    public AssetReferenceSprite _ChestArmor_1Sprite;
+    public AssetReferenceSprite _LongSword_1Sprite;
 
     #endregion
     #endregion
-    public static AddressablesController _Instance;
+
     public bool[,] _IsChunkLoadedToScene { get; private set; }
     public List<AsyncOperationHandle<GameObject>>[,] _HandlesForSpawned { get; private set; }
     public List<GameObject>[,] _NpcListForChunk { get; private set; }
@@ -22,6 +30,7 @@ public class AddressablesController : MonoBehaviour
     #region Method Parameters For Optimization
     private List<AssetReferenceGameObject> _objectsWillBeSpawned;
     private List<Transform> _objectsParentForSpawn;
+    private List<ItemHandleData> _objectsItemHandleForSpawn;
     private List<Vector3> _objectPositionsWillBeSpawned;
     private List<Vector3> _objectRotationsWillBeSpawned;
     #endregion
@@ -90,6 +99,7 @@ public class AddressablesController : MonoBehaviour
         if (_IsChunkLoadedToScene[x, y]) return;
 
         SetAdressablesForSpawn(x, y);
+        if (_objectsWillBeSpawned == null) return;
         for (int i = 0; i < _objectsWillBeSpawned.Count; i++)
         {
             SpawnObj(x, y, i);
@@ -101,21 +111,24 @@ public class AddressablesController : MonoBehaviour
         _objectPositionsWillBeSpawned = GameManager._Instance._ObjectPositionsInChunk[x, y];
         _objectRotationsWillBeSpawned = GameManager._Instance._ObjectRotationsInChunk[x, y];
         _objectsParentForSpawn = GameManager._Instance._ObjectParentsInChunk[x, y];
+        _objectsItemHandleForSpawn = GameManager._Instance._ObjectItemHandleData[x, y];
     }
     private void SpawnObj(int x, int y, int i)
     {
         if (_HandlesForSpawned[x, y] == null)
             _HandlesForSpawned[x, y] = new List<AsyncOperationHandle<GameObject>>();
 
-        Vector3 pos = _objectPositionsWillBeSpawned[i]; //for action buffer(array chances)
-        Vector3 angles = _objectRotationsWillBeSpawned[i]; //for action buffer(array chances)
-        Transform parentTransform = _objectsParentForSpawn[i]; //for action buffer(array chances)
+        Vector3 pos = _objectPositionsWillBeSpawned[i]; //for action buffer(index changes)
+        Vector3 angles = _objectRotationsWillBeSpawned[i]; //for action buffer(index changes)
+        Transform parentTransform = _objectsParentForSpawn[i]; //for action buffer(index changes)
+        ItemHandleData itemHandle = _objectsItemHandleForSpawn[i]; //for action buffer(index changes)
         _objectsWillBeSpawned[i].InstantiateAsync(pos, Quaternion.Euler(angles), parentTransform).Completed += (handle) =>
          {
              if (handle.Status != AsyncOperationStatus.Succeeded) return;
              GameObject obj = handle.Result;
              GameManager._Instance.SetTerrainLinks(obj);
              _HandlesForSpawned[x, y].Add(handle);
+             handle.Result.GetComponent<CarriableObject>()._ItemHandleData = itemHandle;
              handle.Result.GetComponent<CarriableObject>()._Handle = handle;
              handle.Result.GetComponent<CarriableObject>()._Chunk = new Vector2Int(x, y);
 

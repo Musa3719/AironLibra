@@ -3,6 +3,22 @@ using UnityEngine.InputSystem;
 
 public static class M_Input
 {
+    public static bool IsQuickBackCarryInteractionInput()
+    {
+        bool gamepadInput = false, mouseInput = false;
+        if (Gamepad.current != null && Gamepad.current.buttonWest.wasPressedThisFrame && Gamepad.current.rightTrigger.isPressed)
+            gamepadInput = true;
+        if (Mouse.current != null && Input.GetMouseButtonDown(0) && Input.GetButton("Crouch"))
+            gamepadInput = true;
+
+        return gamepadInput || mouseInput;
+    }
+    public static bool IsCarryUIPressedForGamepad()
+    {
+        if (Gamepad.current == null) return false;
+
+        return Gamepad.current.buttonSouth.isPressed;
+    }
     public static bool IsLastInputFromGamepadForAim()
     {
         if (Gamepad.current == null) return false;
@@ -29,10 +45,19 @@ public static class M_Input
     {
         float value = 0f;
         if (Gamepad.current != null)
-            value += Gamepad.current.dpad.value.x;
+            value += Gamepad.current.rightStick.value.x;
         if (Keyboard.current != null)
             value += Input.mousePositionDelta.normalized.x;
         return value;
+    }
+    public static float GetCameraRotateUpwardsInput()
+    {
+        float value = 0f;
+        if (Gamepad.current != null)
+            value -= Gamepad.current.rightStick.value.y;
+        if (Keyboard.current != null)
+            value -= Input.mousePositionDelta.normalized.y;
+        return value * 2f;
     }
 
 
@@ -72,6 +97,15 @@ public static class M_Input
         }
     }
 
+    public static bool GetKeyDownForTesting(KeyCode keyCode)
+    {
+        return GetKeyDown(keyCode);
+    }
+    public static bool GetKeyForTesting(KeyCode keyCode)
+    {
+        return GetKey(keyCode);
+    }
+
     public static bool GetKeyDown(KeyCode keyCode)
     {
         return Input.GetKeyDown(keyCode);
@@ -108,7 +142,7 @@ public static class M_Input
             case "UILeft":
                 return Gamepad.current.leftShoulder.wasPressedThisFrame;
             case "InGameMenu":
-                return Gamepad.current.selectButton.wasPressedThisFrame;
+                return Gamepad.current.leftTrigger.wasPressedThisFrame;
             case "Fire1":
                 return Gamepad.current.rightShoulder.wasPressedThisFrame;
             case "Fire2":
@@ -127,6 +161,8 @@ public static class M_Input
                 return Gamepad.current.buttonNorth.wasPressedThisFrame;
             case "Dodge":
                 return Gamepad.current.buttonSouth.wasPressedThisFrame;
+            case "Run":
+                return Gamepad.current.rightTrigger.wasPressedThisFrame;
             default:
                 Debug.LogError(buttonName + " : button name not found");
                 return false;
@@ -149,16 +185,18 @@ public static class M_Input
 
         switch (buttonName)
         {
-            case "Sprint":
-                return Gamepad.current.rightTrigger.isPressed;
+            case "Fire1":
+                return GameManager._Instance._IsGameStopped ? false : Gamepad.current.rightShoulder.isPressed;
+            case "Fire2":
+                return GameManager._Instance._IsGameStopped ? false : Gamepad.current.leftShoulder.isPressed;
             case "Run":
-                return Gamepad.current.leftTrigger.isPressed;
+                return Gamepad.current.rightTrigger.isPressed;
             case "CameraAngle":
-                return Gamepad.current.dpad.value.x != 0f;
+                return Gamepad.current.rightStickButton.isPressed;
             case "CoolCamera":
                 return Gamepad.current.leftStickButton.isPressed;
             case "CombatMode":
-                return Gamepad.current.rightStickButton.isPressed;
+                return Gamepad.current.selectButton.isPressed;
             default:
                 Debug.LogError(buttonName + " : button name not found");
                 return false;
@@ -182,6 +220,8 @@ public static class M_Input
 
         switch (buttonName)
         {
+            case "Fire1":
+                return Gamepad.current.rightShoulder.wasReleasedThisFrame;
             default:
                 Debug.LogError(buttonName + " : buttonUp name not found");
                 return false;
