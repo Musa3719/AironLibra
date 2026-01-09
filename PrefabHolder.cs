@@ -20,6 +20,12 @@ public class PrefabHolder : MonoBehaviour
     public Sprite _EquipItemSprite;
     public Sprite _UnequipItemSprite;
 
+    #region Items
+    public GameObject _BoltProjectilePrefab;
+    public GameObject _ArrowProjectilePrefab;
+    public GameObject _Magic_1_ProjectilePrefab;
+    #endregion
+
     private void Awake()
     {
         _Instance = this;

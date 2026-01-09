@@ -1,6 +1,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using TMPro;
 using UMA;
 using UMA.CharacterSystem;
@@ -28,11 +29,10 @@ public class GameManager : MonoBehaviour
     public Dictionary<string, float> _AnimNameToAttackStartTime;
     public Dictionary<string, float> _AnimNameToAttackEndTime;
 
-    public List<AssetReferenceGameObject>[,] _ObjectsInChunk;
+    public List<ItemHandleData>[,] _ItemHandleDatasInChunk;
     public List<Transform>[,] _ObjectParentsInChunk;
     public List<Vector3>[,] _ObjectPositionsInChunk;
     public List<Vector3>[,] _ObjectRotationsInChunk;
-    public List<ItemHandleData>[,] _ObjectItemHandleData;
     //chest data
     //npc data
     public ushort _NumberOfNpcs { get; private set; }
@@ -127,11 +127,10 @@ public class GameManager : MonoBehaviour
         _femaleDnaNames = UMAGlobalContext.Instance.GetRace("HumanFemaleHighPoly").GetDNANames();
 
         NPCManager._Comparer = new NPCDistanceComparer();
-        _ObjectsInChunk = new List<AssetReferenceGameObject>[_NumberOfColumnsForTerrains, _NumberOfRowsForTerrains];
+        _ItemHandleDatasInChunk = new List<ItemHandleData>[_NumberOfColumnsForTerrains, _NumberOfRowsForTerrains];
         _ObjectPositionsInChunk = new List<Vector3>[_NumberOfColumnsForTerrains, _NumberOfRowsForTerrains];
         _ObjectRotationsInChunk = new List<Vector3>[_NumberOfColumnsForTerrains, _NumberOfRowsForTerrains];
         _ObjectParentsInChunk = new List<Transform>[_NumberOfColumnsForTerrains, _NumberOfRowsForTerrains];
-        _ObjectItemHandleData = new List<ItemHandleData>[_NumberOfColumnsForTerrains, _NumberOfRowsForTerrains];
         _MainCamera = Camera.main.gameObject;
         _Player = GameObject.FindGameObjectWithTag("Player");
 
@@ -224,6 +223,7 @@ public class GameManager : MonoBehaviour
 
         if (_LevelIndex != 0)
         {
+            PredefinedNpcLogic.Init();
             NPCManager.Start();
             InitDictionaries();
         }
@@ -404,7 +404,7 @@ public class GameManager : MonoBehaviour
         _ItemNameToPrefab.Add("Apple", AddressablesController._Instance._ItemContainer);
         _ItemNameToPrefab.Add("ChestArmor_1", AddressablesController._Instance._ChestArmor_1Item);
         _ItemNameToPrefab.Add("LongSword_1", AddressablesController._Instance._LongSword_1Item);
-        _ItemNameToPrefab.Add("SmallPack", AddressablesController._Instance._SmallPackItem);
+        _ItemNameToPrefab.Add("Backpack", AddressablesController._Instance._BackpackItem);
         _ItemNameToPrefab.Add("Apple2", AddressablesController._Instance._ItemContainer);
         _ItemNameToPrefab.Add("Apple3", AddressablesController._Instance._ItemContainer);
         _ItemNameToPrefab.Add("Apple4", AddressablesController._Instance._ItemContainer);
@@ -417,7 +417,7 @@ public class GameManager : MonoBehaviour
         _ItemNameToSprite.Add("Apple", AddressablesController._Instance._AppleSprite);
         _ItemNameToSprite.Add("ChestArmor_1", AddressablesController._Instance._ChestArmor_1Sprite);
         _ItemNameToSprite.Add("LongSword_1", AddressablesController._Instance._LongSword_1Sprite);
-        _ItemNameToSprite.Add("SmallPack", AddressablesController._Instance._SmallPackSprite);
+        _ItemNameToSprite.Add("Backpack", AddressablesController._Instance._BackpackSprite);
         _ItemNameToSprite.Add("Apple2", AddressablesController._Instance._AppleSprite);
         _ItemNameToSprite.Add("Apple3", AddressablesController._Instance._AppleSprite);
         _ItemNameToSprite.Add("Apple4", AddressablesController._Instance._AppleSprite);
@@ -591,19 +591,52 @@ public class GameManager : MonoBehaviour
     }
 
 
-    public void LoadChunk(int x, int y)
+    public void LoadChunk(int x, int y, bool isFromReloadChunk = false)
     {
-        AddressablesController._Instance.LoadTerrainObjects(x, y);
-        AddressablesController._Instance.SpawnNpcs(x, y);
-        //Spawn Animals
+        if (AddressablesController._Instance._IsChunkLoading[x, y]) return;
+        AddressablesController._Instance._IsChunkLoading[x, y] = true;
         AddressablesController._Instance._IsChunkLoadedToScene[x, y] = true;
+        CoroutineCall(ref AddressablesController._Instance._IsChunkLoadingCoroutines[x, y], LoadChunkCoroutine(x, y, isFromReloadChunk), this);
     }
-    public void UnloadChunk(int x, int y)
+    private IEnumerator LoadChunkCoroutine(int x, int y, bool isFromReloadChunk)
     {
+        while (AddressablesController._Instance._IsChunkUnloading[x, y])
+        {
+            yield return null;
+        }
+        var handles = new List<AsyncOperationHandle>();
+        handles.AddRange(AddressablesController._Instance.LoadTerrainObjects(x, y));
+        if (!isFromReloadChunk)
+            handles.AddRange(AddressablesController._Instance.SpawnNpcs(x, y));
+        // animals, plants vs...
+        var groupHandle = Addressables.ResourceManager.CreateGenericGroupOperation(handles);
+
+        yield return null;
+        yield return groupHandle;
+        AddressablesController._Instance._IsChunkLoading[x, y] = false;
+    }
+    public void UnloadChunk(int x, int y, bool isFromReloadChunk = false)
+    {
+        if (AddressablesController._Instance._IsChunkUnloading[x, y]) return;
+        AddressablesController._Instance._IsChunkUnloading[x, y] = true;
         AddressablesController._Instance._IsChunkLoadedToScene[x, y] = false;
-        AddressablesController._Instance.DespawnNpcs(x, y);
-        //Despawn Animals
+        CoroutineCall(ref AddressablesController._Instance._IsChunkUnloadingCoroutines[x, y], UnloadChunkCoroutine(x, y, isFromReloadChunk), this);
+    }
+    private IEnumerator UnloadChunkCoroutine(int x, int y, bool isFromReloadChunk)
+    {
+        while (AddressablesController._Instance._IsChunkLoading[x, y])
+        {
+            yield return null;
+        }
+
         AddressablesController._Instance.UnloadTerrainObjects(x, y);
+        if (!isFromReloadChunk)
+            AddressablesController._Instance.DespawnNpcs(x, y);
+        // animals, plants vs...
+
+        yield return null;
+
+        AddressablesController._Instance._IsChunkUnloading[x, y] = false;
     }
 
     public void ReloadAllChunks()
@@ -620,8 +653,8 @@ public class GameManager : MonoBehaviour
     {
         if (!AddressablesController._Instance._IsChunkLoadedToScene[x, y]) return;
 
-        UnloadChunk(x, y);
-        LoadChunk(x, y);
+        UnloadChunk(x, y, true);
+        LoadChunk(x, y, true);
     }
     public Vector2Int GetChunkFromPosition(Vector3 pos)
     {
@@ -629,46 +662,56 @@ public class GameManager : MonoBehaviour
         int y = (int)(pos.z / _TerrainDimensionMagnitude);
         return new Vector2Int(x, y);
     }
-    public void CreateEnvironmentPrefabToWorld(AssetReferenceGameObject objRef, Transform parent, Vector3 pos, Vector3 angles, ref ItemHandleData itemHandleData)
+    public void CreateNewCarriableObjectToWorld(Item item, Vector3 spawnPos)
     {
+        Physics.Raycast(spawnPos, -Vector3.up, out RaycastHit hit, 30f, _TerrainSolidAndWaterMask);
+        spawnPos = hit.point;
+        CreateEnvironmentPrefabToWorld(item._ItemHandleData, _EnvironmentTransform, spawnPos, Vector3.zero);
+    }
+    public void CreateEnvironmentPrefabToWorld(ItemHandleData itemHandleData, Transform parent, Vector3 pos, Vector3 angles)
+    {
+        if (itemHandleData == null) { Debug.LogError("itemhandledata is null! cannot create."); return; }
         Vector2Int chunk = GetChunkFromPosition(pos);
-        if (_ObjectsInChunk[chunk.x, chunk.y] == null)
-            _ObjectsInChunk[chunk.x, chunk.y] = new List<AssetReferenceGameObject>();
-        _ObjectsInChunk[chunk.x, chunk.y].Add(objRef);
+        if (_ItemHandleDatasInChunk[chunk.x, chunk.y] != null && _ItemHandleDatasInChunk[chunk.x, chunk.y].Contains(itemHandleData)) { Debug.LogError("itemhandledata already exist in list! cannot create."); return; }
+
+        if (_ItemHandleDatasInChunk[chunk.x, chunk.y] == null)
+            _ItemHandleDatasInChunk[chunk.x, chunk.y] = new List<ItemHandleData>();
+        _ItemHandleDatasInChunk[chunk.x, chunk.y].Add(itemHandleData);
         if (_ObjectPositionsInChunk[chunk.x, chunk.y] == null)
             _ObjectPositionsInChunk[chunk.x, chunk.y] = new List<Vector3>();
         if (_ObjectRotationsInChunk[chunk.x, chunk.y] == null)
             _ObjectRotationsInChunk[chunk.x, chunk.y] = new List<Vector3>();
         if (_ObjectParentsInChunk[chunk.x, chunk.y] == null)
             _ObjectParentsInChunk[chunk.x, chunk.y] = new List<Transform>();
-        if (_ObjectItemHandleData[chunk.x, chunk.y] == null)
-            _ObjectItemHandleData[chunk.x, chunk.y] = new List<ItemHandleData>();
         _ObjectPositionsInChunk[chunk.x, chunk.y].Add(pos);
         _ObjectRotationsInChunk[chunk.x, chunk.y].Add(angles);
         _ObjectParentsInChunk[chunk.x, chunk.y].Add(parent);
-        _ObjectItemHandleData[chunk.x, chunk.y].Add(itemHandleData);
-
-        itemHandleData._XChunk = chunk.x;
-        itemHandleData._YChunk = chunk.y;
-        itemHandleData._AssetRef = objRef;
-
+        //itemHandleData._AssetRef = objRef;
         ReloadChunk(chunk.x, chunk.y);
     }
     public void DestroyEnvironmentPrefabFromWorld(ItemHandleData itemHandleData)
     {
-        int x = itemHandleData._XChunk, y = itemHandleData._YChunk;
-        int i = _ObjectsInChunk[x, y].IndexOf(itemHandleData._AssetRef);
-        if (_ObjectsInChunk[x, y] == null || i >= _ObjectsInChunk[x, y].Count) return;
+        if (itemHandleData == null) { Debug.LogError("itemhandledata is null! cannot destroy."); return; }
+        if (itemHandleData._CarriableObjectReferance == null) { Debug.LogError("_CarriableObjectReferance is null! cannot destroy."); return; }
+
+        int x = itemHandleData._CarriableObjectReferance._Chunk.x, y = itemHandleData._CarriableObjectReferance._Chunk.y;
+        int i = _ItemHandleDatasInChunk[x, y].IndexOf(itemHandleData);
+        if (_ItemHandleDatasInChunk[x, y] == null || i >= _ItemHandleDatasInChunk[x, y].Count) return;
         if (_ObjectPositionsInChunk[x, y] == null || i >= _ObjectPositionsInChunk[x, y].Count) return;
         if (_ObjectRotationsInChunk[x, y] == null || i >= _ObjectRotationsInChunk[x, y].Count) return;
         if (_ObjectParentsInChunk[x, y] == null || i >= _ObjectParentsInChunk[x, y].Count) return;
-        if (_ObjectItemHandleData[x, y] == null || i >= _ObjectItemHandleData[x, y].Count) return;
 
-        _ObjectsInChunk[x, y].RemoveAt(i);
+        var handles = AddressablesController._Instance._HandlesForSpawned;
+        if (itemHandleData._SpawnHandle.HasValue && handles[x, y] != null && handles[x, y].Contains(itemHandleData._SpawnHandle.Value))
+        {
+            AddressablesController._Instance.DespawnObj(itemHandleData._SpawnHandle.Value);
+            handles[x, y].Remove((itemHandleData._SpawnHandle.Value));
+        }
+        itemHandleData._SpawnHandle = null;
+        _ItemHandleDatasInChunk[x, y].RemoveAt(i);
         _ObjectPositionsInChunk[x, y].RemoveAt(i);
         _ObjectRotationsInChunk[x, y].RemoveAt(i);
         _ObjectParentsInChunk[x, y].RemoveAt(i);
-        _ObjectItemHandleData[x, y].RemoveAt(i);
 
         ReloadChunk(x, y);
     }
@@ -726,7 +769,7 @@ public class GameManager : MonoBehaviour
         SaveSystemHandler._Instance._IsSettingPlayerDataForCreation = false;
 
         WorldHandler._Instance._Player._IsMale = SaveSystemHandler._Instance._PlayerIsMaleForCreation;
-        NPCManager.SetGender(WorldHandler._Instance._Player._UmaDynamicAvatar, WorldHandler._Instance._Player._IsMale);
+        WorldHandler._Instance._Player.SetGender(WorldHandler._Instance._Player._IsMale);
 
         WorldHandler._Instance._Player._DnaData = SaveSystemHandler._Instance._PlayerDnaDataForCreation;
 
@@ -765,7 +808,7 @@ public class GameManager : MonoBehaviour
         {
             //Debug.LogError("Player Character Not Set!");
             WorldHandler._Instance._Player._IsMale = true;
-            NPCManager.SetGender(WorldHandler._Instance._Player._UmaDynamicAvatar, WorldHandler._Instance._Player._IsMale);
+            WorldHandler._Instance._Player.SetGender(WorldHandler._Instance._Player._IsMale);
             SetRandomDNA(WorldHandler._Instance._Player);
             SetRandomWardrobe(WorldHandler._Instance._Player, WorldHandler._Instance._Player._IsMale);
         }
@@ -852,7 +895,7 @@ public class GameManager : MonoBehaviour
             human._CharacterColors.Add("Skin", color);
 
         if (avatar != null)
-            NPCManager.ChangeColor(avatar, "Skin", color);
+            human.ChangeColor("Skin", color);
 
         float redValue = Random.Range(0.1f, 0.5f);
         float greenValue = Random.Range(0.1f, 0.5f);
@@ -865,7 +908,7 @@ public class GameManager : MonoBehaviour
             human._CharacterColors.Add("Hair", color);
 
         if (avatar != null)
-            NPCManager.ChangeColor(avatar, "Hair", color);
+            human.ChangeColor("Hair", color);
 
         redValue = Random.Range(0.25f, 0.6f);
         greenValue = Random.Range(0.25f, 0.6f);
@@ -878,7 +921,7 @@ public class GameManager : MonoBehaviour
             human._CharacterColors.Add("Eyes", color);
 
         if (avatar != null)
-            NPCManager.ChangeColor(avatar, "Eyes", color);
+            human.ChangeColor("Eyes", color);
 
         if (avatar != null && avatar.BuildCharacterEnabled)
         {
@@ -1244,7 +1287,7 @@ public class GameManager : MonoBehaviour
 
         if (takerInventory == null)
         {
-            Debug.Log("target inv is null, dropping.");
+            //Debug.Log("target inv is null, dropping.");
             if (itemref._IsEquipped)
                 itemref.Unequip(true, false);
             else
@@ -1562,13 +1605,10 @@ public class GameManager : MonoBehaviour
     {
         if (!_InventoryScreen.activeSelf) return;
 
-        string formattedCurrent = FormatWeight(WorldHandler._Instance._Player._Inventory.GetCurrentCarryWeight(false));
-        string formattedLimit = FormatWeight(WorldHandler._Instance._Player._Inventory._CarryWeightLimit);
-        _InventoryScreen.transform.Find("OwnInventory").Find("Info").Find("WeightLimitText").GetComponent<TextMeshProUGUI>().text = $"{formattedCurrent} / {formattedLimit}";
-        formattedCurrent = FormatWeight(WorldHandler._Instance._Player._Inventory.GetCurrentCarryVolume());
-        formattedLimit = FormatWeight(WorldHandler._Instance._Player._Inventory._CarryVolumeLimit);
-        _InventoryScreen.transform.Find("OwnInventory").Find("Info").Find("VolumeLimitText").GetComponent<TextMeshProUGUI>().text = $"{formattedCurrent} / {formattedLimit}";
-
+        //Debug.Log(WorldHandler._Instance._Player._Inventory._CarryCapacityUse + " : " + WorldHandler._Instance._Player._Inventory.ArrangeCurrentCarryCapacityUse());
+        string formattedCurrent = FormatWeight(WorldHandler._Instance._Player._Inventory._CarryCapacityUse);
+        string formattedLimit = FormatWeight(WorldHandler._Instance._Player._Inventory._CarryCapacity);
+        _InventoryScreen.transform.Find("OwnInventory").Find("Info").Find("CarryCapacityText").GetComponent<TextMeshProUGUI>().text = $"{formattedCurrent} / {formattedLimit}";
         _InventoryScreen.transform.Find("OwnInventory").Find("Info").Find("NeedSleep").GetComponent<TextMeshProUGUI>().text = WorldHandler._Instance._Player._NeedSleepAmount.ToString();
         _InventoryScreen.transform.Find("OwnInventory").Find("Info").Find("NeedCleaning").GetComponent<TextMeshProUGUI>().text = WorldHandler._Instance._Player._NeedCleaningAmount.ToString();
         _InventoryScreen.transform.Find("OwnInventory").Find("Info").Find("NeedEat").GetComponent<TextMeshProUGUI>().text = WorldHandler._Instance._Player._NeedEatAmount.ToString();
@@ -1807,6 +1847,22 @@ public class GameManager : MonoBehaviour
         }
         return null;
     }
+    public bool IsCursorOnUI(Vector3 pos)
+    {
+        Vector2 screenPos = RectTransformUtility.WorldToScreenPoint(null, pos);
+        PointerEventData pointerData = new PointerEventData(EventSystem.current)
+        {
+            position = screenPos
+        };
+        List<RaycastResult> results = new List<RaycastResult>();
+        _GraphicRaycaster.Raycast(pointerData, results);
+        foreach (var item in results)
+        {
+            if (item.gameObject != null && item.gameObject.GetComponent<Image>() != null && !item.gameObject.name.EndsWith("Screen"))
+                return true;
+        }
+        return false;
+    }
     public void Slowtime(float time)
     {
         CoroutineCall(ref _slowTimeCoroutine, SlowTimeCoroutine(time), this);
@@ -1836,25 +1892,5 @@ public class GameManager : MonoBehaviour
 
         SoundManager._Instance.UnSlowDownAllSound();
     }
-    public string GetRandomCivilianName(bool isMale)
-    {
-        string path = "";
-        if (isMale)
-        {
-            path = Application.streamingAssetsPath + "/NamesMan.txt";
-        }
-        else
-        {
-            path = Application.streamingAssetsPath + "/NamesWoman.txt";
-        }
-        StreamReader reader = new StreamReader(path);
-        string line = "";
-        List<string> list = new List<string>();
-        while ((line = reader.ReadLine()) != null)
-        {
-            list.Add(line);
-        }
-        reader.Close();
-        return list[Random.Range(0, list.Count)];
-    }
+
 }

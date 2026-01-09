@@ -176,7 +176,7 @@ public class CharacterCreation : MonoBehaviour
         Color skin = _charPreview.GetColor("Skin").color;
         Color hair = _charPreview.GetColor("Hair").color;
         Color eyes = _charPreview.GetColor("Eyes").color;
-        NPCManager.SetGender(_charPreview, isMale);
+        SetGenderToAvatar(_charPreview, isMale);
         _charPreview.SetColorValue("Skin", skin);
         _charPreview.SetColorValue("Hair", hair);
         _charPreview.SetColorValue("Eyes", eyes);
@@ -194,6 +194,23 @@ public class CharacterCreation : MonoBehaviour
         ArrangeSliders(true);
         RecalculateLevels();
         BuildChar();
+    }
+    private void SetGenderToAvatar(DynamicCharacterAvatar avatar, bool isMale)
+    {
+        if (avatar == null) return;
+
+        if (isMale)
+        {
+            avatar.ChangeRace("HumanMale", DynamicCharacterAvatar.ChangeRaceOptions.none);
+            avatar.GetComponent<UMA.PoseTools.ExpressionPlayer>().overrideMecanimJaw = false;
+        }
+        else
+        {
+            avatar.ChangeRace("HumanFemaleHighPoly", DynamicCharacterAvatar.ChangeRaceOptions.none);
+            avatar.GetComponent<UMA.PoseTools.ExpressionPlayer>().overrideMecanimJaw = true;
+        }
+
+        (avatar.GetComponent<UMA.PoseTools.ExpressionPlayer>() as UMA.PoseTools.UMAExpressionPlayer).InstantBlink();
     }
 
     public void RandomizeDna()

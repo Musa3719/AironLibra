@@ -130,7 +130,14 @@ public class InventorySlotUI : MonoBehaviour, IPointerEnterHandler, IPointerExit
         {
             Vector3 checkPos = GameManager._Instance._IsCarryUIFromGamepad ? GamepadMouse._Instance._CursorRect.position : Input.mousePosition;
             InventorySlotUI droppedToInventorySlotUI = GameManager._Instance.GetInventorySlotUIFromPosition(checkPos)?.GetComponent<InventorySlotUI>();
-            if (droppedToInventorySlotUI != null && ExchangeConditions(droppedToInventorySlotUI))
+            if (droppedToInventorySlotUI == null && !GameManager._Instance.IsCursorOnUI(checkPos))
+            {
+                if (_ItemRef._IsEquipped)
+                    _ItemRef.Unequip(true, false);
+                else
+                    _ItemRef.DropFrom(true);
+            }
+            else if (droppedToInventorySlotUI != null && ExchangeConditions(droppedToInventorySlotUI))
             {
                 GameManager._Instance.UpdateInventoryUIInstant();//use slotUIs real itemRef
                 if (droppedToInventorySlotUI._ItemRef == null)

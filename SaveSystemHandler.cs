@@ -36,11 +36,10 @@ public class SaveSystemHandler : MonoBehaviour
         PlayerData playerData = GetPlayerData();
         GameData data = new GameData
         {
-            _ObjectsInChunk = GameManager._Instance._ObjectsInChunk,
+            _ItemHandleDatasInChunk = GameManager._Instance._ItemHandleDatasInChunk,
             _ObjectPositionsInChunk = GameManager._Instance._ObjectPositionsInChunk,
             _ObjectRotationsInChunk = GameManager._Instance._ObjectRotationsInChunk,
             _ObjectParentsInChunk = GameManager._Instance._ObjectParentsInChunk,
-            _ObjectItemHandleData = GameManager._Instance._ObjectItemHandleData,
             _NpcData = npcData,
             _PlayerData = playerData,
             _SnowLevel = Shader.GetGlobalFloat("_Global_SnowLevel"),
@@ -50,6 +49,7 @@ public class SaveSystemHandler : MonoBehaviour
             _Minute = WorldHandler._Instance._Clock._Minute,
             _Season = WorldHandler._Instance._Date._Season,
             _Year = WorldHandler._Instance._Date._Year
+            //save projectiles
         };
 
         SaveGameData(index, data);
@@ -62,10 +62,9 @@ public class SaveSystemHandler : MonoBehaviour
 
         if (data != null)
         {
-            GameManager._Instance._ObjectsInChunk = data._ObjectsInChunk;
+            GameManager._Instance._ItemHandleDatasInChunk = data._ItemHandleDatasInChunk;
             GameManager._Instance._ObjectPositionsInChunk = data._ObjectPositionsInChunk;
             GameManager._Instance._ObjectRotationsInChunk = data._ObjectRotationsInChunk;
-            GameManager._Instance._ObjectItemHandleData = data._ObjectItemHandleData;
             GameManager._Instance._ObjectParentsInChunk = data._ObjectParentsInChunk;
             Shader.SetGlobalFloat("_Global_SnowLevel", data._SnowLevel);
 
@@ -117,6 +116,8 @@ public class SaveSystemHandler : MonoBehaviour
                     npc._UmaDynamicAvatar.BuildCharacterEnabled = true;
                 }
             }
+
+            //load projectiles
         }
         else
         {
@@ -183,7 +184,7 @@ public class SaveSystemHandler : MonoBehaviour
     {
         if (!File.Exists(SavePath(index)))
         {
-            Debug.LogWarning("Save file not found.");
+            //Debug.LogWarning("Save file not found.");
             return null;
         }
 
@@ -199,11 +200,10 @@ public class SaveSystemHandler : MonoBehaviour
 [System.Serializable]
 public class GameData
 {
-    public List<UnityEngine.AddressableAssets.AssetReferenceGameObject>[,] _ObjectsInChunk;
+    public List<ItemHandleData>[,] _ItemHandleDatasInChunk;
     public List<Vector3>[,] _ObjectPositionsInChunk;
     public List<Vector3>[,] _ObjectRotationsInChunk;
     public List<Transform>[,] _ObjectParentsInChunk;
-    public List<ItemHandleData>[,] _ObjectItemHandleData;
     public PlayerData _PlayerData;
     public List<NpcData> _NpcData;
     public float _SnowLevel;
