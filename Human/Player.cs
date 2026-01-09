@@ -124,7 +124,7 @@ public class PlayerInputController
 
         if (M_Input.GetButtonDown("Interact"))
         {
-            _player.CheckForNearInventories(true);
+            _player.CheckForNearItemHolders(true, out InventoryHolder nearestInventoryHolder, out CarriableObject nearestCarriable);
         }
         if (M_Input.GetButtonDown("Jump"))
         {

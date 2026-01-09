@@ -79,24 +79,20 @@ public interface ICanGetHurt
 }
 public interface ICanDamage
 {
-
     public bool IsHitBox(Collider other);
     public ICanGetHurt GetHurtable(Collider other);
+    public Vector3 _AttackForward { get; set; }
 }
 public interface Weapon
 {
     public WeaponType _WeaponType { get; }
     public Rigidbody _Rigidbody { get; }
     public WeaponItem _ConnectedItem { get; set; }
-    public Vector3 _AttackForward { get; }
-    public AttackDirectionFrom _AttackDirectionFrom { get; set; }
-    public Damage _Damage { get; set; }
-    public float _HeavyAttackMultiplier { get; set; }
-    public Vector3 _LastPos { get; set; }
-    public Vector3 GetHitDirection();
     public void Init(WeaponItem item);
+    public Damage _Damage { get; set; }
     public void Attack(string animName, float heavyAttackMultiplier, AttackDirectionFrom attackDirectionFrom);
     public Transform GetAttachedHuman();
+
 }
 
 public enum AttackDirectionFrom
@@ -105,5 +101,5 @@ public enum AttackDirectionFrom
 }
 public enum WeaponType
 {
-    None, BroadSword, LongSword, ColossalSword, Scimitar, Katana, Mace, Hammer, Halberd, Rapier, Dagger, Spear, Bow, Crossbow
+    None, BroadSword, LongSword, ColossalSword, Scimitar, Katana, Mace, Hammer, Halberd, Rapier, Dagger, Spear, Bow, Crossbow, Talisman
 }

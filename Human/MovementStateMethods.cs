@@ -139,13 +139,13 @@ public static class MovementStateMethods
     }
     private static bool CanRunWithStamina(Humanoid human)
     {
-        if (human._Stamina > 0 && Time.time > 2f + human._WaitForRunLastTriggerTime) return true;
+        if (human._Stamina < 1f) return false;
         else if (Time.time > 2f + human._WaitForRunLastTriggerTime)
         {
             human._WaitForRunLastTriggerTime = Time.time;
             return false;
         }
-        return false;
+        return true;
     }
     public static void CheckSprint(Humanoid human)
     {
@@ -168,7 +168,7 @@ public static class MovementStateMethods
             return;
         }
 
-        sprintConditions = player._DirectionInput.sqrMagnitude > 0.1f && CanRunWithStamina(player) && player._IsGrounded && IsMovingForward(player) && !player._HealthSystem._IsUnhealthy && player._MovementState is LocomotionState && !(player._HandState is CarryHandState);
+        sprintConditions = !player._IsOverCarryCapacity && player._DirectionInput.sqrMagnitude > 0.1f && CanRunWithStamina(player) && player._IsGrounded && IsMovingForward(player) && !player._HealthSystem._IsUnhealthy && player._MovementState is LocomotionState && !(player._HandState is CarryHandState);
 
         if (!(runInput && sprintConditions) && !player._IsSprinting)
         {
@@ -203,7 +203,7 @@ public static class MovementStateMethods
             return;
         }
 
-        sprintConditions = npc._DirectionInput.sqrMagnitude > 0.1f && CanRunWithStamina(npc) && npc._IsGrounded && IsMovingForward(npc) && !npc._HealthSystem._IsUnhealthy && npc._MovementState is LocomotionState && !(npc._HandState is CarryHandState) && new Vector3((npc._LastCornerFromPath - npc.transform.position).x, 0f, (npc._LastCornerFromPath - npc.transform.position).z).magnitude > 0.7f;
+        sprintConditions = !npc._IsOverCarryCapacity && npc._DirectionInput.sqrMagnitude > 0.1f && CanRunWithStamina(npc) && npc._IsGrounded && IsMovingForward(npc) && !npc._HealthSystem._IsUnhealthy && npc._MovementState is LocomotionState && !(npc._HandState is CarryHandState) && new Vector3((npc._LastCornerFromPath - npc.transform.position).x, 0f, (npc._LastCornerFromPath - npc.transform.position).z).magnitude > 0.7f;
 
         if ((sprintInput || runInput) && sprintConditions)
         {
@@ -296,6 +296,7 @@ public static class MovementStateMethods
         // trigger jump behaviour
         human._JumpCounter = human._JumpTimer;
         human._IsJumping = true;
+        human._JumpStartSpeed = new Vector2(human._Rigidbody.linearVelocity.x, human._Rigidbody.linearVelocity.z).magnitude;
 
         var vel = human._Rigidbody.linearVelocity;
         vel.y = human._LocomotionSystem.jumpHeight;
@@ -335,17 +336,11 @@ public static class MovementStateMethods
 
         human._LocomotionSystem.inputSmooth = Vector3.Lerp(human._LocomotionSystem.inputSmooth, human._DirectionInput, human._LocomotionSystem.airSmooth * Time.fixedDeltaTime);
 
-        if (human._LocomotionSystem.jumpWithRigidbodyForce && !human._IsGrounded)
-        {
-            human._Rigidbody.AddForce(human._LocomotionSystem.moveDirection * human._LocomotionSystem.airSpeed * Time.fixedDeltaTime, ForceMode.VelocityChange);
-            return;
-        }
-
         human._LocomotionSystem.moveDirection.y = 0;
         human._LocomotionSystem.moveDirection.x = Mathf.Clamp(human._LocomotionSystem.moveDirection.x, -1f, 1f);
         human._LocomotionSystem.moveDirection.z = Mathf.Clamp(human._LocomotionSystem.moveDirection.z, -1f, 1f);
 
-        Vector3 targetPosition = human._Rigidbody.position + (human._LocomotionSystem.moveDirection * human._LocomotionSystem.airSpeed) * Time.fixedDeltaTime;
+        Vector3 targetPosition = human._Rigidbody.position + (human._LocomotionSystem.moveDirection * human._LocomotionSystem.airSpeed * (human._JumpStartSpeed + 1.4f) * 6f) * Time.fixedDeltaTime;
         Vector3 targetVelocity = (targetPosition - human.transform.position) / Time.fixedDeltaTime;
 
         targetVelocity.y = human._Rigidbody.linearVelocity.y;
@@ -468,6 +463,7 @@ public static class MovementStateMethods
             targetSpeed = human._IsSprinting ? speed.sprintSpeed : speed.runningSpeed;
 
         if (human._MovementState is SwimMoveState && human._IsSprinting) targetSpeed *= 0.8f;
+        if (human._IsOverCarryCapacity) targetSpeed *= 0.65f;
 
         float lerpMultiplier = (human._LocomotionSystem.moveSpeed > targetSpeed) ? 1.5f : 1f;
         human._LocomotionSystem.moveSpeed = Mathf.MoveTowards(human._LocomotionSystem.moveSpeed, targetSpeed, speed.movementSmooth * lerpMultiplier * Time.fixedDeltaTime);

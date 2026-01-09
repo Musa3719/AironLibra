@@ -78,9 +78,9 @@ public static class HandStateMethods
             {
                 meleeWeapon._AttackWarning.gameObject.SetActive(false);
                 meleeWeapon._AttackCollider.gameObject.SetActive(false);
+                meleeWeapon._HeavyAttackMultiplier = 1f;
             }
             weapon._Rigidbody.collisionDetectionMode = CollisionDetectionMode.Discrete;
-            weapon._HeavyAttackMultiplier = 1f;
         }
 
         human._IsAttacking = false;
@@ -126,7 +126,7 @@ public static class HandStateMethods
         if (handEquippedItemRef != null && weaponType != WeaponType.None && handEquippedItemRef is WeaponItem weaponItem)
         {
             var handle = weaponItem._SpawnedHandle;
-            if (handle.IsValid() && handle.IsDone && handle.Result != null)
+            if (handle.HasValue && handle.Value.IsValid() && handle.Value.IsDone && handle.Value.Result != null)
             {
                 human._FootIKComponent.SetTargetWeight(0f);
                 human._Stamina -= 15f;
@@ -136,7 +136,7 @@ public static class HandStateMethods
                 human._WaitTimeForNextAttack = 0.65f * heavyAttackMultiplier * GetAttackWaitMultiplierForHumanAgi(human) * (weaponItem._ItemDefinition as ICanBeEquippedForDefinition)._Value / 25f;
                 float attackSpeedMultiplier = 1f / human._WaitTimeForNextAttack;
                 human.ChangeAnimationWithOffset(human._LastReadyAnimName, (heavyAttackMultiplier - 1f) / 3f, 0.1f, attackSpeedMultiplier, human._IsAttackingFromLeftHandWeapon ? 4 : 3);
-                handle.Result.GetComponent<Weapon>().Attack(human._LastReadyAnimName, heavyAttackMultiplier, human._LastAttackDirectionFrom);
+                handle.Value.Result.GetComponent<Weapon>().Attack(human._LastReadyAnimName, heavyAttackMultiplier, human._LastAttackDirectionFrom);
                 MovementStateMethods.AttackMove(human);
             }
         }
@@ -276,8 +276,8 @@ public static class HandStateMethods
     public static WeaponType GetCurrentWeaponType(Humanoid human, bool isCheckingLeftHand)
     {
         Item checkItem = isCheckingLeftHand ? human._LeftHandEquippedItemRef : human._RightHandEquippedItemRef;
-        if (checkItem != null && checkItem is WeaponItem weaponItem && weaponItem._SpawnedHandle.IsValid() && weaponItem._SpawnedHandle.IsDone && weaponItem._SpawnedHandle.Result != null)
-            return weaponItem._SpawnedHandle.Result.GetComponent<Weapon>()._WeaponType;
+        if (checkItem != null && checkItem is WeaponItem weaponItem && weaponItem._SpawnedHandle.HasValue && weaponItem._SpawnedHandle.Value.IsValid() && weaponItem._SpawnedHandle.Value.IsDone && weaponItem._SpawnedHandle.Value.Result != null)
+            return weaponItem._SpawnedHandle.Value.Result.GetComponent<Weapon>()._WeaponType;
 
         return WeaponType.None;
     }
@@ -334,6 +334,10 @@ public static class HandStateMethods
         else if (name.StartsWith("Crossbow"))
         {
             return WeaponType.Crossbow;
+        }
+        else if (name.StartsWith("Talisman"))
+        {
+            return WeaponType.Talisman;
         }
 
         Debug.LogError("Weapon Type Not Found! name :" + name);

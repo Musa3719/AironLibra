@@ -6,6 +6,8 @@ using UnityEngine.AI;
 public class NPC : Humanoid
 {
     public ushort _NpcIndex;
+    public NpcLogic _NpcLogic;
+    public NpcDialogue _NpcDialogue;
     public override Vector2 _DirectionInput => _directionCurrent;
     public GameObject _TargetPoolNPC { get; private set; }
     public Vector3 _LastCornerFromPath { get; private set; }
@@ -14,6 +16,8 @@ public class NPC : Humanoid
     private List<Vector3> _cornersFromPath;
     private NavMeshPath _CurrentPath { get { if (_currentPath == null) _currentPath = new NavMeshPath(); return _currentPath; } }
     private NavMeshPath _currentPath;
+    private float _logicUpdateCounter;
+    private float _logicUpdateThreshold;
     private bool _isPathEnded;
     private float _segmentationMagnitude = 100f;
     private float _stuckOnPathTimer;
@@ -37,6 +41,12 @@ public class NPC : Humanoid
 
     protected override void Awake()
     {
+        if (_Class == null)
+            _Class = new Peasant();//
+
+        _NpcLogic = new NpcLogic(this);
+        _NpcDialogue = new NpcDialogue(this);
+
         _tryToCreatePathTimer = Random.Range(0f, _tryToCreatePathThreshold);
         _nextPositionCheckCounter = Random.Range(0f, _nextPositionCheckThreshold);
 
@@ -49,10 +59,6 @@ public class NPC : Humanoid
         base.Awake();
         _checkCornerDist = Vector3.zero;
         _cornersFromPath = new List<Vector3>();
-
-        if (_Class == null)
-            _Class = new Peasant();//
-
     }
     protected override void Start()
     {
@@ -78,7 +84,7 @@ public class NPC : Humanoid
 
     public void UpdateWhenAway()
     {
-
+        _NpcLogic.UpdateLogic();
     }
     protected override void Update()
     {
@@ -99,7 +105,7 @@ public class NPC : Humanoid
 
         if (_InteractInput)
         {
-            InventoryHolder inventoryHolder = CheckForNearInventories(false);
+            CheckForNearItemHolders(false, out InventoryHolder nearestInventoryHolder, out CarriableObject nearestCarriable);
             ///take send equip unequip if public, if not steal or trade 
         }
         //testing
@@ -119,8 +125,6 @@ public class NPC : Humanoid
             TryAttacking(false, 0.15f);
         //WorldAndNpcCreation.SetGender(_UmaDynamicAvatar, Random.Range(0, 2) == 0);
         //WorldAndNpcCreation.ChangeColor(_UmaDynamicAvatar, "Skin", Color.red);
-        if (M_Input.GetKeyDownForTesting(KeyCode.E))
-            DestroyNPCChild();
         if (M_Input.GetKeyDownForTesting(KeyCode.M))
             ArrangeNewMovementTarget(GameObject.Find("TargetPositionTest").transform.position);
         if (M_Input.GetKeyForTesting(KeyCode.N))

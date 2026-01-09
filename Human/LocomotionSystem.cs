@@ -101,9 +101,11 @@ public class LocomotionSystem : MonoBehaviour
         {
             NPC npc = transform.parent.GetComponent<NPC>();
             if (npc._RightHandEquippedItemRef != null)
-                npc._RightHandEquippedItemRef.DespawnHandItemHandle();
+                npc._RightHandEquippedItemRef.DespawnHandItem();
             if (npc._LeftHandEquippedItemRef != null)
-                npc._LeftHandEquippedItemRef.DespawnHandItemHandle();
+                npc._LeftHandEquippedItemRef.DespawnHandItem();
+            if (npc._BackCarryItemRef != null)
+                npc._BackCarryItemRef.DespawnBackCarryItem();
         }
     }
     public void Init()

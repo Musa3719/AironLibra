@@ -274,7 +274,6 @@ public class SwimMoveState : MovementState
 {
     public Humanoid _Human => _human;
     private Humanoid _human;
-    private float _stateChangeCounter;
     private bool _isSwimAnimForward;
     public SwimMoveState(Humanoid human)
     {
@@ -283,7 +282,6 @@ public class SwimMoveState : MovementState
     public void EnterState(MovementState oldState)
     {
         _human._Rigidbody.useGravity = false;
-        _stateChangeCounter = 0.1f;
         _human._LocomotionSystem._defaultCollider.enabled = true;
         _human.ChangeAnimation("Swim_Idle");
         _human._LocomotionSystem.MovementSpeedMultiplierMoveState = 0.8f;
@@ -566,7 +564,8 @@ public class EmptyHandsState : HandState
     public void EnterState(HandState oldState)
     {
         _human._LocomotionSystem.MovementSpeedMultiplierHandState = 1f;
-        _human.ChangeAnimation("EmptyHands");
+        _human.ChangeAnimation("EmptyHandsRight");
+        _human.ChangeAnimation("EmptyHandsLeft");
     }
 
     public void ExitState(HandState newState)

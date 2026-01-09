@@ -61,10 +61,6 @@ public class HealthSystem
     }
     public void Update()
     {
-        if (M_Input.GetKeyDownForTesting(KeyCode.C))
-            _BloodLevel = 100f;
-        if (M_Input.GetKeyDownForTesting(KeyCode.B))
-            _BloodLevel = 10f;
         if (_updateCounter < 1f)
         {
             _updateCounter += Time.deltaTime;

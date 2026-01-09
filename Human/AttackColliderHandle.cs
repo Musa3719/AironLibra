@@ -3,6 +3,7 @@ using UnityEngine;
 
 public class AttackColliderHandle : MonoBehaviour, ICanDamage
 {
+    public Vector3 _AttackForward { get; set; }
     private Weapon _FromWeapon;
 
     private List<ICanGetHurt> _alreadyHit = new List<ICanGetHurt>();
@@ -25,8 +26,8 @@ public class AttackColliderHandle : MonoBehaviour, ICanDamage
     public void OnTrigger(Collider other)
     {
         if (other == null) return;
-        if (other.isTrigger && !IsHitBox(other)) return;
-        if (other.GetComponent<MeleeWeapon>() != null || other.name.StartsWith("AttackCollider")) return;
+        if (!other.isTrigger) return;
+        if (!IsHitBox(other)) return;
 
         ICanGetHurt hurtable = GetHurtable(other);
         if (hurtable == (_FromWeapon._ConnectedItem._EquippedHumanoid as ICanGetHurt)) return;
@@ -43,7 +44,7 @@ public class AttackColliderHandle : MonoBehaviour, ICanDamage
         {
             if (hurtable._IsBlocking)
             {
-                if (GetBlockAngle(hurtable._Transform.forward, _FromWeapon._AttackForward) < 80f)
+                if (GetBlockAngle(hurtable._Transform.forward, _AttackForward) < 80f)
                     GiveDamage(other, hurtable);
                 else
                 {
@@ -53,9 +54,9 @@ public class AttackColliderHandle : MonoBehaviour, ICanDamage
                         GiveDamage(other, hurtable, true);
                     }
                     else if (hurtable._LastTimeTriedParry + hurtable._ParryTime > Time.time)
-                        HandStateMethods.AttackGotParried(_FromWeapon._ConnectedItem._EquippedHumanoid, _FromWeapon._AttackForward);
+                        HandStateMethods.AttackGotParried(_FromWeapon._ConnectedItem._EquippedHumanoid, _AttackForward);
                     else if (hurtable._LastTimeTriedParry + hurtable._ParryOverTime > Time.time)
-                        HandStateMethods.ParryFailed(hurtable as Humanoid, _FromWeapon._AttackForward);
+                        HandStateMethods.ParryFailed(hurtable as Humanoid, _AttackForward);
                     else
                         hurtable.Blocked(InitDamage(other));
                 }
@@ -72,7 +73,7 @@ public class AttackColliderHandle : MonoBehaviour, ICanDamage
     }
     private void GiveDamage(Collider other, ICanGetHurt hurtable, bool isDamageToHands = false)
     {
-        InitDamage(other, isDamageToHands).Inflict(hurtable, _FromWeapon._HeavyAttackMultiplier);
+        InitDamage(other, isDamageToHands).Inflict(hurtable, (_FromWeapon as MeleeWeapon)._HeavyAttackMultiplier);
     }
 
     private Damage InitDamage(Collider other, bool isDamageToHands = false)
@@ -81,9 +82,9 @@ public class AttackColliderHandle : MonoBehaviour, ICanDamage
         DamageType damageType = (_FromWeapon._ConnectedItem._ItemDefinition as ICanBeEquippedForDefinition)._DamageType;
         DamagePart damagePart = isDamageToHands ? DamagePart.Hands : GetDamagePartFromBoneName(other.name);
         float damageAmount = (_FromWeapon._ConnectedItem._ItemDefinition as ICanBeEquippedForDefinition)._Value;
-        Vector3 dir = _FromWeapon.GetHitDirection();
+        Vector3 dir = (_FromWeapon as MeleeWeapon).GetHitDirection();
         Vector3 attackerDirection = _FromWeapon._ConnectedItem._EquippedHumanoid.transform.forward;
-        _FromWeapon._Damage.Init(damageType, damagePart, damageAmount, dir, attackerDirection, _FromWeapon._AttackDirectionFrom);
+        _FromWeapon._Damage.Init(damageType, damagePart, damageAmount, dir, attackerDirection, (_FromWeapon as MeleeWeapon)._AttackDirectionFrom);
         return _FromWeapon._Damage;
     }
     private DamagePart GetDamagePartFromBoneName(string nameStr)

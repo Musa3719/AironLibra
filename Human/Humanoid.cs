@@ -1,10 +1,10 @@
+using FIMSpace;
+using FischlWorks;
 using System.Collections;
 using System.Collections.Generic;
-using UnityEngine;
-using FischlWorks;
 using UMA;
 using UMA.CharacterSystem;
-using FIMSpace;
+using UnityEngine;
 
 public abstract class Humanoid : MonoBehaviour, ICanGetHurt
 {
@@ -42,7 +42,7 @@ public abstract class Humanoid : MonoBehaviour, ICanGetHurt
     public float _MuscleLevel { get; set; }
     public float _FatLevel { get; set; }
     public float _Height { get; set; }
-
+    public float _HumanCarryCapacity => _MuscleLevel * 80f + _FatLevel * 20f + _Height * 40f;
     public float _NeedSleepAmount { get => _needSleepAmount; set => _needSleepAmount = Mathf.Clamp(value, 0f, 99f); }
     private float _needSleepAmount;
     public float _NeedCleaningAmount { get => _needCleaningAmount; set => _needCleaningAmount = Mathf.Clamp(value, 0f, 99f); }
@@ -62,6 +62,7 @@ public abstract class Humanoid : MonoBehaviour, ICanGetHurt
 
     //public Characteristic _Characteristic { get; private set; }
 
+    public Transform _BackpackTransform { get; private set; }
     public float _DefaultMeleeWeaponDamage => 25f;
     public Transform _RightHandHolderTransform { get; private set; }
     public Transform _LeftHandHolderTransform { get; private set; }
@@ -94,6 +95,7 @@ public abstract class Humanoid : MonoBehaviour, ICanGetHurt
     public float _SizeMultiplier { get; private set; }
     public virtual Vector2 _DirectionInput { get; }
     public float _SlopeSpeedAdder { get; set; }
+    public float _JumpStartSpeed { get; set; }
     public bool _IsInFastWalkMode { get; set; }
     public bool _SprintInput { get; set; }
     public bool _IsInCombatMode { get; set; }
@@ -119,6 +121,7 @@ public abstract class Humanoid : MonoBehaviour, ICanGetHurt
     public bool _IsAttackingFromLeftHandWeapon { get; set; }
     public Weapon _LastAttackWeapon { get; set; }
 
+    public bool _IsOverCarryCapacity => _Inventory._CarryCapacityUse > _HumanCarryCapacity;
     public bool _IsDodging { get; set; }
     public bool _IsBlocking { get; set; }
     public bool _IsAttacking { get; set; }
@@ -182,16 +185,17 @@ public abstract class Humanoid : MonoBehaviour, ICanGetHurt
     {
         AwakeForAway();
 
+        _WaitForRunLastTriggerTime = -2f;
         _LocomotionSystem = GetComponentInChildren<LocomotionSystem>();
         _FootIKComponent = _LocomotionSystem.GetComponentInChildren<csHomebrewIK>();
         _LeaninganimatorComponent = _LocomotionSystem.GetComponentInChildren<LeaningAnimator>();
         _UmaDynamicAvatar = _LocomotionSystem.transform.Find("char").GetComponent<DynamicCharacterAvatar>();
         _ExpressionPlayer = _UmaDynamicAvatar.GetComponent<UMA.PoseTools.ExpressionPlayer>();
         _ragdollAvatar = _UmaDynamicAvatar.GetComponent<UMA.Dynamics.UMAPhysicsAvatar>();
-        if (_UmaDynamicAvatar != null)
-            NPCManager.SetGender(_UmaDynamicAvatar, _IsMale);
+        SetGender(_IsMale);
         InitOrLoadUmaCharacter();
         _checkForSnowThreshold = Random.Range(0.85f, 1f);
+        _BackpackTransform = _LocomotionSystem.transform.Find("char/Root/Global/Position/Hips/LowerBack/Spine/Spine1/BackpackTransform");
         _RightHandHolderTransform = _LocomotionSystem.transform.Find("char/Root/Global/Position/Hips/LowerBack/Spine/Spine1/RightShoulder/RightArm/RightForeArm/RightHand/RightHolder/RMovable");
         _LeftHandHolderTransform = _LocomotionSystem.transform.Find("char/Root/Global/Position/Hips/LowerBack/Spine/Spine1/LeftShoulder/LeftArm/LeftForeArm/LeftHand/LeftHolder/LMovable");
         _LeftHandHolderTransform.localEulerAngles = new Vector3(180f, 0f, 0f);
@@ -259,6 +263,8 @@ public abstract class Humanoid : MonoBehaviour, ICanGetHurt
             _RightHandEquippedItemRef.SpawnHandItem();
         if (_LeftHandEquippedItemRef != null)
             _LeftHandEquippedItemRef.SpawnHandItem();
+        if (_BackCarryItemRef != null)
+            _BackCarryItemRef.SpawnBackCarryItem();
     }
     public void UmaUpdated()
     {
@@ -369,7 +375,7 @@ public abstract class Humanoid : MonoBehaviour, ICanGetHurt
     {
         if (this is NPC && _UmaDynamicAvatar.BuildCharacterEnabled) return;
 
-        NPCManager.SetGender(_UmaDynamicAvatar, _IsMale);
+        SetGender(_IsMale);
         SetDna(true);
         SetWardrobe();
 
@@ -377,7 +383,7 @@ public abstract class Humanoid : MonoBehaviour, ICanGetHurt
         {
             foreach (var color in _CharacterColors)
             {
-                NPCManager.ChangeColor(_UmaDynamicAvatar, color.Key, color.Value);
+                ChangeColor(color.Key, color.Value);
             }
         }
 
@@ -391,9 +397,11 @@ public abstract class Humanoid : MonoBehaviour, ICanGetHurt
         if (this is NPC && (_SkinnedMeshRenderer == null || _SkinnedMeshRenderer.sharedMesh == null)) return;
 
         if (_RightHandEquippedItemRef != null)
-            _RightHandEquippedItemRef.DespawnHandItemHandle();
+            _RightHandEquippedItemRef.DespawnHandItem();
         if (_LeftHandEquippedItemRef != null)
-            _LeftHandEquippedItemRef.DespawnHandItemHandle();
+            _LeftHandEquippedItemRef.DespawnHandItem();
+        if (_BackCarryItemRef != null)
+            _BackCarryItemRef.DespawnBackCarryItem();
 
         if (!(this is Player))
             DisableHumanAdditionals();
@@ -456,7 +464,7 @@ public abstract class Humanoid : MonoBehaviour, ICanGetHurt
         float secondThreshold = isToHand ? 0.3f : 0.6f;
 
         var handle = ((isRight ? _RightHandEquippedItemRef : _LeftHandEquippedItemRef) as WeaponItem)._SpawnedHandle;
-        while (!(handle.IsValid() && handle.IsDone && handle.Result != null))
+        while (!(handle.HasValue && handle.Value.IsValid() && handle.Value.IsDone && handle.Value.Result != null))
         {
             if (timer > 1f)
             {
@@ -472,7 +480,8 @@ public abstract class Humanoid : MonoBehaviour, ICanGetHurt
 
         timer = 0;
         Transform beforeParentTransform = isToHand ? (isRight ? _RightWeaponHolder : _LeftWeaponHolder) : (isRight ? _RightHandHolderTransform : _LeftHandHolderTransform);
-        Transform weaponTransform = ((isRight ? _RightHandEquippedItemRef : _LeftHandEquippedItemRef) as WeaponItem)._SpawnedHandle.Result.transform;
+        if (!handle.HasValue) yield break;
+        Transform weaponTransform = ((isRight ? _RightHandEquippedItemRef : _LeftHandEquippedItemRef) as WeaponItem)._SpawnedHandle.Value.Result.transform;
         if (weaponTransform == null) yield break;
         weaponTransform.SetParent(beforeParentTransform, true);
         //weaponTransform.localPosition = Vector3.zero;
@@ -510,6 +519,7 @@ public abstract class Humanoid : MonoBehaviour, ICanGetHurt
         weaponTransform.localRotation = targetQuaternion;
     }
 
+    public UMATextRecipe GetRecipeFromItemName(string itemName) => UMAAssetIndexer.Instance.GetRecipe("ChestArmor1_M_Recipe");//UMAAssetIndexer.Instance.GetRecipe(_IsMale ? itemName + "_M_Recipe" : itemName + "_F_Recipe");
     public void WearWardrobe(UMATextRecipe recipe, bool isRefresh = false)
     {
         if (!isRefresh)
@@ -567,6 +577,35 @@ public abstract class Humanoid : MonoBehaviour, ICanGetHurt
             _UmaDynamicAvatar.BuildCharacterEnabled = false;
             _UmaDynamicAvatar.BuildCharacterEnabled = true;
         }
+    }
+    public void SetGender(bool isMale)
+    {
+        if (_UmaDynamicAvatar == null) return;
+
+        if (isMale)
+        {
+            _UmaDynamicAvatar.ChangeRace("HumanMale", DynamicCharacterAvatar.ChangeRaceOptions.none);
+            _UmaDynamicAvatar.GetComponent<UMA.PoseTools.ExpressionPlayer>().overrideMecanimJaw = false;
+        }
+        else
+        {
+            _UmaDynamicAvatar.ChangeRace("HumanFemaleHighPoly", DynamicCharacterAvatar.ChangeRaceOptions.none);
+            _UmaDynamicAvatar.GetComponent<UMA.PoseTools.ExpressionPlayer>().overrideMecanimJaw = true;
+        }
+
+        (_UmaDynamicAvatar.GetComponent<UMA.PoseTools.ExpressionPlayer>() as UMA.PoseTools.UMAExpressionPlayer).InstantBlink();
+    }
+    public void ChangeColor(string colorName, Color newColor)
+    {
+        if (_UmaDynamicAvatar == null) return;
+
+        _UmaDynamicAvatar.SetColorValue(colorName, newColor);
+
+        /*if (avatar.BuildCharacterEnabled)
+        {
+            avatar.BuildCharacterEnabled = false;
+            avatar.BuildCharacterEnabled = true;
+        }*/
     }
     public float GetDnaValueByName(string dnaName)
     {
@@ -809,7 +848,10 @@ public abstract class Humanoid : MonoBehaviour, ICanGetHurt
     public void ChangeAnimation(string name, float fadeTime = 0.2f, float attackSpeedMultiplier = 1f, int layer = -1)
     {
         _Animator.SetFloat(AnimatorParameters.AttackSpeedMultiplier, attackSpeedMultiplier);
-        _Animator.CrossFadeInFixedTime(name, fadeTime, layer);
+        if (layer == -1)
+            _Animator.CrossFadeInFixedTime(name, fadeTime);
+        else
+            _Animator.CrossFadeInFixedTime(name, fadeTime, layer);
     }
     public void ChangeAnimationWithOffset(string name, float normalizedTimeOffset, float fadeTime, float attackSpeedMultiplier = 1f, int layer = -1)
     {
@@ -910,30 +952,53 @@ public abstract class Humanoid : MonoBehaviour, ICanGetHurt
         MovementStateMethods.Stagger(this, 0.2f, damage._Direction);
         ChangeAnimation("Blocked");
     }
-    public InventoryHolder CheckForNearInventories(bool isPlayer)
+    public void CheckForNearItemHolders(bool isPlayer, out InventoryHolder nearestInventoryHolder, out CarriableObject nearestCarriable)
     {
-        InventoryHolder nearestInventoryHolder = null;
-        float nearestDistance = 0f;
+        nearestInventoryHolder = null;
+        nearestCarriable = null;
+        float nearestDistanceForInv = float.MaxValue;
+        float nearestCarriableDistance = float.MaxValue;
         Collider[] colliders = Physics.OverlapSphere(transform.position, 1f);
         foreach (var collider in colliders)
         {
-            Humanoid human = GetHumanoidFromCollider(collider);
+            if (collider.TryGetComponent(out CarriableObject carriableObject))
+            {
+                CheckForNearInventoriesCommon(carriableObject, ref nearestCarriableDistance, ref nearestCarriable, collider);
+            }
             if (collider != null && collider.transform.parent != null && collider.transform.parent.TryGetComponent(out InventoryHolder anotherInventoryHolder))
             {
-                ChecForNearInventoriesCommon(anotherInventoryHolder, ref nearestDistance, ref nearestInventoryHolder, collider);
+                CheckForNearInventoriesCommon(anotherInventoryHolder, ref nearestDistanceForInv, ref nearestInventoryHolder, collider);
             }
-            else if (human != null && human != this)
+            Humanoid human = GetHumanoidFromCollider(collider);
+            if (human != null && human != this)
             {
-                ChecForNearInventoriesCommon(human._InventoryHolder, ref nearestDistance, ref nearestInventoryHolder, collider);
+                CheckForNearInventoriesCommon(human._InventoryHolder, ref nearestDistanceForInv, ref nearestInventoryHolder, collider);
             }
         }
 
-        if (nearestInventoryHolder != null && isPlayer)
-            GameManager._Instance.OpenAnotherInventory(nearestInventoryHolder._Inventory);
+        if (nearestCarriableDistance < nearestDistanceForInv)
+        {
+            nearestInventoryHolder = null;
+            if (nearestCarriable != null && isPlayer)
+                nearestCarriable.TakeCarriableToInventory(_Inventory);
+        }
+        else
+        {
+            nearestCarriable = null;
+            if (nearestInventoryHolder != null && isPlayer)
+                GameManager._Instance.OpenAnotherInventory(nearestInventoryHolder._Inventory);
+        }
 
-        return nearestInventoryHolder;
     }
-    private void ChecForNearInventoriesCommon(InventoryHolder holder, ref float nearestDistance, ref InventoryHolder nearestInventoryHolder, Collider collider)
+    private void CheckForNearInventoriesCommon(InventoryHolder holder, ref float nearestDistance, ref InventoryHolder nearestInventoryHolder, Collider collider)
+    {
+        if (nearestInventoryHolder == null || nearestDistance > (collider.transform.position - transform.position).magnitude)
+        {
+            nearestDistance = (collider.transform.position - transform.position).magnitude;
+            nearestInventoryHolder = holder;
+        }
+    }
+    private void CheckForNearInventoriesCommon(CarriableObject holder, ref float nearestDistance, ref CarriableObject nearestInventoryHolder, Collider collider)
     {
         if (nearestInventoryHolder == null || nearestDistance > (collider.transform.position - transform.position).magnitude)
         {

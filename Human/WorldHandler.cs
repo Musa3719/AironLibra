@@ -56,6 +56,9 @@ public class WorldHandler : MonoBehaviour
     {
         if (GameManager._Instance._IsGameStopped) return;
 
+        //if (M_Input.GetKeyDownForTesting(KeyCode.J))
+            //Gaia.ProceduralWorldsGlobalWeather.Instance.PlaySnow(true);
+
         _Clock.Update();
         CheckWeatherForCurrentWorldPosition();
         //Debug.Log(Gaia.ProceduralWorldsGlobalWeather.Instance.Season + " : " + _DaysInSeason + " : " + _DaysInYear);

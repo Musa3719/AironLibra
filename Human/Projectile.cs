@@ -4,6 +4,7 @@ using UnityEngine;
 
 public class Projectile : MonoBehaviour, ICanDamage
 {
+    public Vector3 _AttackForward { get; set; }
     public Damage _Damage { get { return _damage; } set { _damage = value; } }
     private Damage _damage;
 
@@ -50,7 +51,7 @@ public class Projectile : MonoBehaviour, ICanDamage
         {
             if (hurtable._IsBlocking)
             {
-                if (GetBlockAngle(hurtable._Transform.forward, _FromWeapon._AttackForward) < 100f)
+                if (GetBlockAngle(hurtable._Transform.forward, _AttackForward) < 100f)
                     GiveDamage(other, hurtable);
                 else
                 {
@@ -60,9 +61,9 @@ public class Projectile : MonoBehaviour, ICanDamage
                         GiveDamage(other, hurtable, true);
                     }
                     else if (hurtable._LastTimeTriedParry + hurtable._ParryTime > Time.time)
-                        HandStateMethods.AttackGotParried(_FromWeapon._ConnectedItem._EquippedHumanoid, _FromWeapon._AttackForward);
+                        HandStateMethods.AttackGotParried(_FromWeapon._ConnectedItem._EquippedHumanoid, _AttackForward);
                     else if (hurtable._LastTimeTriedParry + hurtable._ParryOverTime > Time.time)
-                        HandStateMethods.ParryFailed(hurtable as Humanoid, _FromWeapon._AttackForward);
+                        HandStateMethods.ParryFailed(hurtable as Humanoid, _AttackForward);
                     else
                         hurtable.Blocked(InitDamage(other));
                 }
@@ -84,13 +85,17 @@ public class Projectile : MonoBehaviour, ICanDamage
         InitDamage(other, isDamageToHands).Inflict(hurtable, 1f);
     }
 
+    private Vector3 GetHitDirection()
+    {
+        return _rb.linearVelocity.normalized;
+    }
     private Damage InitDamage(Collider other, bool isDamageToHands = false)
     {
         _FromWeapon._Damage = new Damage();
         DamageType damageType = (_FromWeapon._ConnectedItem._ItemDefinition as ICanBeEquippedForDefinition)._DamageType;
         DamagePart damagePart = isDamageToHands ? DamagePart.Hands : GetDamagePartFromBoneName(other.name);
         float damageAmount = (_FromWeapon._ConnectedItem._ItemDefinition as ICanBeEquippedForDefinition)._Value;
-        Vector3 dir = _FromWeapon.GetHitDirection();
+        Vector3 dir = GetHitDirection();
         _FromWeapon._Damage.Init(damageType, damagePart, damageAmount, dir, transform.forward, AttackDirectionFrom.Forward);
         return _FromWeapon._Damage;
     }

@@ -1,9 +1,10 @@
+using System.Buffers;
 using System.Collections.Generic;
-using UnityEngine;
 using System.Linq;
 using UMA;
 using UMA.CharacterSystem;
-using System.Buffers;
+using UnityEngine;
+using static NameCreator;
 
 public static class NPCManager
 {
@@ -26,6 +27,9 @@ public static class NPCManager
     }
     public static void Start()
     {
+        //for (int i = 0; i < 4 * System.Enum.GetValues(typeof(CultureTypeForName)).Length; i++)
+            //Debug.Log((CultureTypeForName)(i / 4f) + " : " + (i % 4 < 2 ? "Male" : "Female") + " : " + NameCreator.GetName((CultureTypeForName)(i / 4f), i % 4 < 2));
+
         _npcPool = new NPC[GameManager._Instance._NumberOfNpcs];
         _distancePool = new float[GameManager._Instance._NumberOfNpcs];
         _awayNpcUpdateCounters = new Dictionary<NPC, float>();
@@ -49,19 +53,24 @@ public static class NPCManager
             if (_awayNpcUpdateCounters[npc] < 0f)
             {
                 _awayNpcUpdateCounters[npc] = Random.Range(8f, 12f);
-                if (npc.transform.childCount != 0)
+                if (npc.transform.childCount == 0)
                     npc.UpdateWhenAway();
             }
         }
-
-        if (M_Input.GetKeyDownForTesting(KeyCode.Q))
+        if (M_Input.GetKeyDownForTesting(KeyCode.L))
         {
-            foreach (var npc in _AllNPCs)
-            {
-                npc.SpawnNPCChild();
-            }
+            GameManager._Instance.LoadChunk(0, 0);
         }
-        if (M_Input.GetKeyDownForTesting(KeyCode.F))
+        if (M_Input.GetKeyDownForTesting(KeyCode.U))
+        {
+            GameManager._Instance.UnloadChunk(0, 0);
+        }
+        if (M_Input.GetKeyDownForTesting(KeyCode.R))
+        {
+            GameManager._Instance.ReloadChunk(0, 0);
+        }
+
+        if (M_Input.GetKeyDownForTesting(KeyCode.H))
         {
             new WeaponItem(LongSword_1._Instance).Equip(WorldHandler._Instance._Player._Inventory);
             foreach (var npc in _AllNPCs)
@@ -72,42 +81,6 @@ public static class NPCManager
         }
     }
 
-    public static void SetGender(DynamicCharacterAvatar avatar, bool isMale)
-    {
-        if (avatar == null) return;
-
-        if (isMale)
-        {
-            avatar.ChangeRace("HumanMale", DynamicCharacterAvatar.ChangeRaceOptions.none);
-            avatar.GetComponent<UMA.PoseTools.ExpressionPlayer>().overrideMecanimJaw = false;
-        }
-        else
-        {
-            avatar.ChangeRace("HumanFemaleHighPoly", DynamicCharacterAvatar.ChangeRaceOptions.none);
-            avatar.GetComponent<UMA.PoseTools.ExpressionPlayer>().overrideMecanimJaw = true;
-        }
-
-        (avatar.GetComponent<UMA.PoseTools.ExpressionPlayer>() as UMA.PoseTools.UMAExpressionPlayer).InstantBlink();
-    }
-    public static void ChangeColor(DynamicCharacterAvatar avatar, string colorName, Color newColor)
-    {
-        if (avatar == null) return;
-
-        avatar.SetColorValue(colorName, newColor);
-
-        /*if (avatar.BuildCharacterEnabled)
-        {
-            avatar.BuildCharacterEnabled = false;
-            avatar.BuildCharacterEnabled = true;
-        }*/
-    }
-    public static void ChangeDna(Dictionary<string, float> dnaData, Humanoid human, string name, float value, bool isRebuilding)
-    {
-        if (dnaData == null) return;
-        dnaData[name] = value;
-        if (human != null)
-            human.SetDna(isRebuilding);
-    }
     public static List<UMATextRecipe> GetRandomHair(bool isMale)
     {
         List<UMATextRecipe> umaTextRecipes = new List<UMATextRecipe>();
@@ -150,7 +123,7 @@ public static class NPCManager
         {
             umaTextRecipes.Add(UMAAssetIndexer.Instance.GetRecipe("MaleDefaultUnderwear"));
 
-            umaTextRecipes.Add(UMAAssetIndexer.Instance.GetRecipe("TestChestArmor_Recipe"));
+            //umaTextRecipes.Add(UMAAssetIndexer.Instance.GetRecipe("TestChestArmor_Recipe"));
             /*int random = Random.Range(0, 3);
             if (random == 0)
                 umaTextRecipes.Add(UMAAssetIndexer.Instance.GetRecipe("MaleShirt1"));
@@ -170,7 +143,7 @@ public static class NPCManager
         {
             umaTextRecipes.Add(UMAAssetIndexer.Instance.GetRecipe("FemaleDefaultUnderwear"));
 
-            int random = Random.Range(0, 3);
+            /*int random = Random.Range(0, 3);
             if (random == 0)
                 umaTextRecipes.Add(UMAAssetIndexer.Instance.GetRecipe("FemaleShirt1"));
             else if (random == 1)
@@ -183,7 +156,7 @@ public static class NPCManager
             if (random == 0)
                 umaTextRecipes.Add(UMAAssetIndexer.Instance.GetRecipe("FemalePants1"));
             else if (random == 1)
-                umaTextRecipes.Add(UMAAssetIndexer.Instance.GetRecipe("FemalePants2"));
+                umaTextRecipes.Add(UMAAssetIndexer.Instance.GetRecipe("FemalePants2"));*/
         }
 
         return umaTextRecipes;
