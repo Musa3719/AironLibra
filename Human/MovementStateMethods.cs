@@ -6,8 +6,8 @@ public static class MovementStateMethods
 {
     public static void TriggerRotateAnimation(Humanoid human, bool isRight)
     {
-        if (human._LastTimeRotated + 0.3f > Time.time) return;
-        human._LastTimeRotated = Time.time;
+        if (human._LastTimeRotated + 0.3 > Time.timeAsDouble) return;
+        human._LastTimeRotated = Time.timeAsDouble;
 
         if (isRight)
         {
@@ -61,7 +61,8 @@ public static class MovementStateMethods
 
         if (human._IsStrafing && !CameraController._Instance._IsInCoolAngleMode)
         {
-            Vector3 aimTargetDirection = (human is Player pl) ? (pl._LookAtForCam.position - human.transform.position).normalized : ((human as NPC)._AimPosition - human.transform.position).normalized;
+            //Vector3 aimTargetDirection = (human is Player pl) ? (pl._LookAtForCam.position - human.transform.position).normalized : ((human as NPC)._AimPosition - human.transform.position).normalized;
+            Vector3 aimTargetDirection = (human._AimPosition - human.transform.position).normalized;
             Vector2 first = new Vector2(human.transform.forward.x, human.transform.forward.z);
             Vector2 second = new Vector2(aimTargetDirection.x, aimTargetDirection.z);
             float angle = Vector2.Angle(first, second);
@@ -86,7 +87,7 @@ public static class MovementStateMethods
         if (human._HealthSystem.GetHealthState() != HealthState.Healthy) return;
 
         human._FootIKComponent.SetTargetWeight(0f);
-        human._LastTimeDodged = Time.time;
+        human._LastTimeDodged = Time.timeAsDouble;
         if (human._AttackReadyTime > human._HeavyAttackThreshold)
             human.ChangeAnimation("AttackMove", 0.1f);
         Vector3 dir = human.transform.forward;
@@ -127,10 +128,10 @@ public static class MovementStateMethods
     public static bool IsInDeepWater(Humanoid human)
     {
         float yLevel = Mathf.Max(human.transform.position.y + 1f, WorldHandler._Instance._SeaLevel + 0.5f);
-        if (Physics.Raycast(new Vector3(human.transform.position.x, yLevel, human.transform.position.z), -Vector3.up, out RaycastHit hit, 1f, GameManager._Instance._TerrainSolidAndWaterMask))
+        if (Physics.Raycast(new Vector3(human.transform.position.x, yLevel, human.transform.position.z), -Vector3.up, out RaycastHit hit, 1f, GameManager._Instance._TerrainSolidWaterMask))
             if (hit.collider != null && hit.collider.gameObject.layer == LayerMask.NameToLayer("Water"))
             {
-                Physics.Raycast(hit.point + Vector3.up * 0.1f, -Vector3.up, out hit, 1.5f, GameManager._Instance._TerrainAndSolidMask);
+                Physics.Raycast(hit.point + Vector3.up * 0.1f, -Vector3.up, out hit, 1.5f, GameManager._Instance._TerrainSolidMask);
                 if (hit.collider == null)
                     return true;
             }
@@ -140,9 +141,9 @@ public static class MovementStateMethods
     private static bool CanRunWithStamina(Humanoid human)
     {
         if (human._Stamina < 1f) return false;
-        else if (Time.time > 2f + human._WaitForRunLastTriggerTime)
+        else if (Time.timeAsDouble > 2 + human._WaitForRunLastTriggerTime)
         {
-            human._WaitForRunLastTriggerTime = Time.time;
+            human._WaitForRunLastTriggerTime = Time.timeAsDouble;
             return false;
         }
         return true;
@@ -258,7 +259,7 @@ public static class MovementStateMethods
     }
     public static bool DodgeConditions(Humanoid human)
     {
-        if (!human._IsInCombatMode || human._HealthSystem._IsUnhealthy || human._IsDodging || human._IsStaggered || !human._IsGrounded || human._LastTimeDodged + 0.5f > Time.time || human._Stamina < 25f) return false;
+        if (!human._IsInCombatMode || human._HealthSystem._IsUnhealthy || human._IsDodging || human._IsReloading || human._IsStaggered || !human._IsGrounded || human._LastTimeDodged + 0.5 > Time.timeAsDouble || human._Stamina < 25f) return false;
 
         return true;
     }
@@ -267,7 +268,7 @@ public static class MovementStateMethods
         human._FootIKComponent.SetTargetWeight(0f);
         human._Stamina -= 25f;
         human._IsDodging = true;
-        human._LastTimeDodged = Time.time;
+        human._LastTimeDodged = Time.timeAsDouble;
         human.ChangeAnimation("Dodge", 0.1f);
         Vector3 dir = human._DirectionInput.magnitude > 0.1f ? GameManager._Instance.Vector2ToVector3(human._DirectionInput) : -human.transform.forward;
         human._Rigidbody.linearVelocity = Vector3.ProjectOnPlane(dir, human._LocomotionSystem.groundHit.normal).normalized * human._LocomotionSystem.dodgeSpeed;
@@ -290,7 +291,7 @@ public static class MovementStateMethods
 
     private static void Jump(Humanoid human)
     {
-        if (human is Player pl) { pl._LastJumpedPosition = pl._LookAtForCam.position; pl._LastJumpedTime = Time.time; }
+        if (human is Player pl) { pl._LastJumpedPosition = pl._LookAtForCam.position; pl._LastJumpedTime = Time.timeAsDouble; }
 
         human._Stamina -= 30f;
         // trigger jump behaviour
@@ -462,13 +463,9 @@ public static class MovementStateMethods
         else
             targetSpeed = human._IsSprinting ? speed.sprintSpeed : speed.runningSpeed;
 
-        if (human._MovementState is SwimMoveState && human._IsSprinting) targetSpeed *= 0.8f;
-        if (human._IsOverCarryCapacity) targetSpeed *= 0.65f;
-
         float lerpMultiplier = (human._LocomotionSystem.moveSpeed > targetSpeed) ? 1.5f : 1f;
         human._LocomotionSystem.moveSpeed = Mathf.MoveTowards(human._LocomotionSystem.moveSpeed, targetSpeed, speed.movementSmooth * lerpMultiplier * Time.fixedDeltaTime);
     }
-
     private static void MoveCharacter(Vector3 direction, Humanoid human)
     {
         if (!human._IsGrounded || human._IsJumping || human._IsDodging || human._IsStaggered || human._IsAttacking) { human._LocomotionSystem.inputSmooth = Vector3.zero; return; }

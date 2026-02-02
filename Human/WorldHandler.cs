@@ -22,11 +22,12 @@ public class WorldHandler : MonoBehaviour
     private float _rainAmount;
     private float _snowAmount;
     private float _checkWeatherForCurrentWorldPositionCounter;
-    private float _lastTimeRainVFXChanged;
+    private double _lastTimeRainVFXChanged;
 
     public List<Group> _Factions { get; private set; }
     public Group _PlayerFaction { get; private set; }
 
+    public Transform _TestTransform { get; private set; }
     public Player _Player { get { if (_player == null) _player = GameManager._Instance._Player.GetComponent<Player>(); return _player; } }
     private Player _player;
 
@@ -39,6 +40,7 @@ public class WorldHandler : MonoBehaviour
     private void Awake()
     {
         _Instance = this;
+        _TestTransform = GameObject.FindGameObjectWithTag("TargetPositionTest").transform;
         _NoneWeatherStartTimeForDay = -1;
         _RainStartTimeForDay = -1;
         _SnowStartTimeForDay = -1;
@@ -90,18 +92,18 @@ public class WorldHandler : MonoBehaviour
         if (_checkWeatherForCurrentWorldPositionCounter < 1f) return;
         _checkWeatherForCurrentWorldPositionCounter = 0f;
 
-        if (_lastTimeRainVFXChanged + 3f < Time.time)
+        if (_lastTimeRainVFXChanged + 3 < Time.timeAsDouble)
         {
             if (GameManager._Instance.GetChunkFromPosition(_Player.transform.position).y < _WeatherLimitFromNorth)
             {
                 if (Gaia.ProceduralWorldsGlobalWeather.Instance.IsRaining)
                 {
-                    _lastTimeRainVFXChanged = Time.time;
+                    _lastTimeRainVFXChanged = Time.timeAsDouble;
                     Gaia.ProceduralWorldsGlobalWeather.Instance.StopRain();
                 }
                 else if (Gaia.ProceduralWorldsGlobalWeather.Instance.IsSnowing)
                 {
-                    _lastTimeRainVFXChanged = Time.time;
+                    _lastTimeRainVFXChanged = Time.timeAsDouble;
                     Gaia.ProceduralWorldsGlobalWeather.Instance.StopSnow();
                 }
             }
@@ -109,12 +111,12 @@ public class WorldHandler : MonoBehaviour
             {
                 if (_WeatherType == WeatherType.Rainy && !Gaia.ProceduralWorldsGlobalWeather.Instance.IsRaining)
                 {
-                    _lastTimeRainVFXChanged = Time.time;
+                    _lastTimeRainVFXChanged = Time.timeAsDouble;
                     Gaia.ProceduralWorldsGlobalWeather.Instance.PlayRain();
                 }
                 else if (_WeatherType == WeatherType.Snowy && !Gaia.ProceduralWorldsGlobalWeather.Instance.IsSnowing)
                 {
-                    _lastTimeRainVFXChanged = Time.time;
+                    _lastTimeRainVFXChanged = Time.timeAsDouble;
                     Gaia.ProceduralWorldsGlobalWeather.Instance.PlaySnow();
                 }
             }
@@ -190,6 +192,7 @@ public class WorldHandler : MonoBehaviour
     public void ChangeWeather(WeatherType newWeather)
     {
         _WeatherType = newWeather;
+        float random = Random.Range(0f, 100f);
         switch (newWeather)
         {
             case WeatherType.None:
@@ -198,17 +201,17 @@ public class WorldHandler : MonoBehaviour
                     Gaia.ProceduralWorldsGlobalWeather.Instance.StopRain(true);
                 else if (Gaia.ProceduralWorldsGlobalWeather.Instance.IsSnowing)
                     Gaia.ProceduralWorldsGlobalWeather.Instance.StopSnow(true);
-                _lastTimeRainVFXChanged = Time.time;
+                _lastTimeRainVFXChanged = Time.timeAsDouble;
                 break;
             case WeatherType.Rainy:
-                _WeatherLimitFromNorth = Random.Range(5, 10);
+                _WeatherLimitFromNorth = random < 20f ? 2 : (random < 40 ? 4 : 3);
                 Gaia.ProceduralWorldsGlobalWeather.Instance.PlayRain(true);
-                _lastTimeRainVFXChanged = Time.time;
+                _lastTimeRainVFXChanged = Time.timeAsDouble;
                 break;
             case WeatherType.Snowy:
-                _WeatherLimitFromNorth = Random.Range(3, 8);
+                _WeatherLimitFromNorth = random < 20f ? 2 : (random < 40 ? 4 : 3);
                 Gaia.ProceduralWorldsGlobalWeather.Instance.PlaySnow(true);
-                _lastTimeRainVFXChanged = Time.time;
+                _lastTimeRainVFXChanged = Time.timeAsDouble;
                 break;
             default:
                 break;

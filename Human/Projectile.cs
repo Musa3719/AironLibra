@@ -1,43 +1,163 @@
 using System.Collections;
 using System.Collections.Generic;
+using UnityEditor.Experimental.GraphView;
 using UnityEngine;
+using UnityEngine.TerrainUtils;
+using UnityEngine.UIElements;
 
 public class Projectile : MonoBehaviour, ICanDamage
 {
     public Vector3 _AttackForward { get; set; }
-    public Damage _Damage { get { return _damage; } set { _damage = value; } }
-    private Damage _damage;
+    public Weapon _FromWeapon { get; set; }
 
-    private Item _connectedItem;
     private Rigidbody _rb;
+    private Collider _mainCollider;
+    private Collider _hitCollider;
+    private Collider _warningCollider;
+    private bool _isFlying;
+    private Vector3 _lastPos;
+    private float _checkDistance;
+    private float _flyTime;
+    private float _lastDirectionCheckCounter;
 
-    private Weapon _FromWeapon;
+    private Item _projectileItem;
+    private Humanoid _attacker;
     private List<ICanGetHurt> _alreadyHit = new List<ICanGetHurt>();
 
-    public void Init(WeaponItem item)
-    {
-        _connectedItem = item;
-    }
+    private Coroutine _flyCoroutine;
 
     private void Awake()
     {
         _rb = GetComponent<Rigidbody>();
+        _mainCollider = GetComponent<Collider>();
+        _hitCollider = transform.Find("AttackCollider").GetComponent<Collider>();
+        _warningCollider = transform.Find("AttackWarning").GetComponent<Collider>();
     }
-    public void InitiateProjectile(Weapon fromWeapon, Vector3 dir, float speed, Damage damage)
+    private void Update()
     {
-        _FromWeapon = fromWeapon;
+        if (_isFlying)
+        {
+            if (_flyTime < 1f || _lastDirectionCheckCounter > 0.2f)
+            {
+                if (Vector3.Angle(transform.forward.normalized, _rb.linearVelocity.normalized) > 1f)
+                {
+                    _lastDirectionCheckCounter = 0f;
+                    transform.forward = _rb.linearVelocity.normalized;
+                }
+            }
+            else
+                _lastDirectionCheckCounter += Time.deltaTime;
+        }
+    }
+    public void StartProjectileLogicFromSave(bool isInActiveFly, bool isStickToHitbox, Item projectileItem, RangedWeapon connectedWeapon, Humanoid attacker, Transform parent, Vector3 localPos, Vector3 localAngles, Vector3 linearSpeed)
+    {
+        _projectileItem = projectileItem;
+        _FromWeapon = connectedWeapon;
+        transform.parent = parent;
+        transform.localPosition = localPos;
+        transform.localEulerAngles = localAngles;
+        _rb.linearVelocity = linearSpeed;
+        _rb.useGravity = false;
+        _attacker = attacker;
+        //_rb.angularVelocity = transform.forward * linearSpeed.magnitude / 2f;
+
+        if (isInActiveFly)
+        {
+            Init(connectedWeapon, linearSpeed.normalized, linearSpeed.magnitude, projectileItem);
+        }
+        else
+        {
+            _rb.isKinematic = true;
+            _mainCollider.enabled = true;
+            if (GetComponent<CarriableObject>() == null)
+                gameObject.AddComponent<CarriableObject>();
+        }
+    }
+    public Vector3 GetDirFromAimPos(Vector3 aimPos, RangedWeapon rangedWeapon) => (aimPos - rangedWeapon._ProjectileMesh.transform.position).normalized;
+    public void Init(RangedWeapon weapon, Vector3 dir, float speed, Item projectileItemFromSave = null)
+    {
+        _projectileItem = projectileItemFromSave != null ? projectileItemFromSave : weapon._ReloadedItem;
+        if (_projectileItem == null) { Debug.LogError("Error after seperating Projectile!"); return; }
+
+        _mainCollider.enabled = false;
+        weapon._ReloadedItem = null;
+        _FromWeapon = weapon;
+        _isFlying = true;
+        _lastPos = transform.position;
+        _warningCollider.gameObject.SetActive(true);
+
+        _rb.useGravity = false;
         _rb.linearVelocity = dir * speed;
-        transform.rotation = Quaternion.LookRotation(dir, Vector3.up);
-        _Damage = damage;
+        transform.forward = dir;
+        _checkDistance = (_hitCollider as BoxCollider).size.z * 1.5f;
+
+        //_rb.angularVelocity = transform.forward * speed / 2f;
+
+        if (projectileItemFromSave == null)
+        {
+            transform.position = (_FromWeapon as RangedWeapon)._ProjectileMesh.transform.position;
+            _attacker = _FromWeapon._ConnectedItem._EquippedHumanoid;
+        }
+        _flyCoroutine = StartCoroutine(FlyCoroutine());
     }
 
-    private void OnTriggerEnter(Collider other)
+    private IEnumerator FlyCoroutine()
     {
-        if (other.isTrigger && !IsHitBox(other)) return;
+        _flyTime = 0f;
+        while (true)
+        {
+            _flyTime += Time.deltaTime;
+            if (_flyTime > 1.5f && !_rb.useGravity)
+                _rb.useGravity = true;
+
+            Vector3 move = transform.position - _lastPos;
+            if (move.magnitude > 0f)
+            {
+                if (Physics.Raycast(_lastPos, move.normalized, out RaycastHit hit, _checkDistance, LayerMask.GetMask("HitBox")))
+                {
+                    OnTrigger(hit.collider, hit.normal);
+                }
+                if (Physics.Raycast(_lastPos, move.normalized, out hit, _checkDistance, GameManager._Instance._TerrainSolidWaterMask))
+                {
+                    HitAndStop(hit.collider, false, hit.normal);
+                }
+            }
+
+            _lastPos = transform.position;
+            yield return null;
+        }
+    }
+    private void HitAndStop(Collider collider, bool isHitbox, Vector3 normal)
+    {
+        if (!_isFlying) return;
+
+        _isFlying = false;
+        StopCoroutine(_flyCoroutine);
+        _rb.linearVelocity = Vector3.zero;
+        _rb.angularVelocity = Vector3.zero;
+        _rb.isKinematic = true;
+        _rb.useGravity = false;
+        _warningCollider.gameObject.SetActive(false);
+
+        if (ICanDamageMethods.GetHurtable(collider) != null)
+            transform.SetParent(collider.transform, true);
+        else
+            transform.SetParent(GameManager._Instance._EnvironmentTransform, true);
+        transform.forward = Vector3.Lerp(transform.forward, -normal, 0.3f);
+        _mainCollider.enabled = true;
+
+        if (GetComponent<CarriableObject>() == null)
+            gameObject.AddComponent<CarriableObject>();
+        GetComponent<CarriableObject>()._ItemRefForProjectiles = _projectileItem;
+    }
+
+    private void OnTrigger(Collider other, Vector3 normal)
+    {
+        if (other.isTrigger && !ICanDamageMethods.IsHitBox(other)) return;
         if (other.GetComponent<MeleeWeapon>() != null || other.name.StartsWith("AttackCollider")) return;
 
-        ICanGetHurt hurtable = GetHurtable(other);
-        if (hurtable == (_FromWeapon._ConnectedItem._EquippedHumanoid as ICanGetHurt)) return;
+        ICanGetHurt hurtable = ICanDamageMethods.GetHurtable(other);
+        if (hurtable == (_attacker as ICanGetHurt)) return;
         if (_alreadyHit.Contains(hurtable)) return;
         _alreadyHit.Add(hurtable);
 
@@ -47,99 +167,32 @@ public class Projectile : MonoBehaviour, ICanDamage
             return;
         }
 
-        if (hurtable != null)
+        if (hurtable == null) return;
+
+        if (hurtable._IsBlocking)
         {
-            if (hurtable._IsBlocking)
-            {
-                if (GetBlockAngle(hurtable._Transform.forward, _AttackForward) < 100f)
-                    GiveDamage(other, hurtable);
-                else
-                {
-                    if (hurtable._IsHandsEmpty)
-                    {
-                        hurtable.Blocked(InitDamage(other));
-                        GiveDamage(other, hurtable, true);
-                    }
-                    else if (hurtable._LastTimeTriedParry + hurtable._ParryTime > Time.time)
-                        HandStateMethods.AttackGotParried(_FromWeapon._ConnectedItem._EquippedHumanoid, _AttackForward);
-                    else if (hurtable._LastTimeTriedParry + hurtable._ParryOverTime > Time.time)
-                        HandStateMethods.ParryFailed(hurtable as Humanoid, _AttackForward);
-                    else
-                        hurtable.Blocked(InitDamage(other));
-                }
-            }
+            if (ICanDamageMethods.GetBlockAngle(hurtable._Transform.forward, _AttackForward) < 100f)
+                ICanDamageMethods.GiveDamage(this, other, hurtable);
             else
             {
-                GiveDamage(other, hurtable);
+                if (hurtable._IsHandsEmpty)
+                {
+                    hurtable.Blocked(ICanDamageMethods.InitDamage(this, other));
+                    ICanDamageMethods.GiveDamage(this, other, hurtable, true);
+                }
+                else if (hurtable._LastTimeTriedParry + hurtable._ParryTime > Time.timeAsDouble)
+                    HandStateMethods.AttackGotParried(_attacker, _AttackForward);
+                else if (hurtable._LastTimeTriedParry + hurtable._ParryOverTime > Time.timeAsDouble)
+                    HandStateMethods.ParryFailed(hurtable as Humanoid, _AttackForward);
+                else
+                    hurtable.Blocked(ICanDamageMethods.InitDamage(this, other));
             }
         }
+        else
+        {
+            ICanDamageMethods.GiveDamage(this, other, hurtable);
+        }
 
-        Destroy(gameObject);
-    }
-    private float GetBlockAngle(Vector3 hurtableTransformForward, Vector3 attackerTransformForward)
-    {
-        return Vector2.Angle(new Vector2(hurtableTransformForward.x, hurtableTransformForward.z), new Vector2(attackerTransformForward.x, attackerTransformForward.z));
-    }
-    private void GiveDamage(Collider other, ICanGetHurt hurtable, bool isDamageToHands = false)
-    {
-        InitDamage(other, isDamageToHands).Inflict(hurtable, 1f);
-    }
-
-    private Vector3 GetHitDirection()
-    {
-        return _rb.linearVelocity.normalized;
-    }
-    private Damage InitDamage(Collider other, bool isDamageToHands = false)
-    {
-        _FromWeapon._Damage = new Damage();
-        DamageType damageType = (_FromWeapon._ConnectedItem._ItemDefinition as ICanBeEquippedForDefinition)._DamageType;
-        DamagePart damagePart = isDamageToHands ? DamagePart.Hands : GetDamagePartFromBoneName(other.name);
-        float damageAmount = (_FromWeapon._ConnectedItem._ItemDefinition as ICanBeEquippedForDefinition)._Value;
-        Vector3 dir = GetHitDirection();
-        _FromWeapon._Damage.Init(damageType, damagePart, damageAmount, dir, transform.forward, AttackDirectionFrom.Forward);
-        return _FromWeapon._Damage;
-    }
-    private DamagePart GetDamagePartFromBoneName(string nameStr)
-    {
-        if (nameStr == "Head" || nameStr == "Neck")
-        {
-            return DamagePart.Head;
-        }
-        else if (nameStr == "LeftForeArm" || nameStr == "LeftHand" || nameStr == "RightForeArm" || nameStr == "RightHand")
-        {
-            return DamagePart.Hands;
-        }
-        else if (nameStr == "RightUpLeg" || nameStr == "RightLeg" || nameStr == "LeftUpLeg" || nameStr == "LeftLeg")
-        {
-            return DamagePart.Legs;
-        }
-        else if (nameStr == "RightFoot" || nameStr == "LeftFoot")
-        {
-            return DamagePart.Feet;
-        }
-        return DamagePart.Chest;
-    }
-
-    public bool IsHitBox(Collider other)
-    {
-        if (other.gameObject.layer == LayerMask.NameToLayer("HitBox"))
-            return true;
-        return false;
-    }
-    public ICanGetHurt GetHurtable(Collider other)
-    {
-        if (!IsHitBox(other)) return null;
-
-        Transform parent = other.transform;
-        ICanGetHurt component;
-        while (parent.parent != null)
-        {
-            parent = parent.parent;
-            if (parent.gameObject.TryGetComponent(out component))
-            {
-                return component;
-            }
-        }
-        return null;
+        HitAndStop(other, true, normal);
     }
 }

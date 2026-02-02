@@ -20,6 +20,8 @@ public static partial class AnimatorParameters
     public static int IsGoingLeft = Animator.StringToHash("IsGoingLeft");
     public static int BlockingAnimNumber = Animator.StringToHash("BlockingAnimNumber");
     public static int ReadySpeed = Animator.StringToHash("ReadySpeed");
+    public static int RangedAimNumber = Animator.StringToHash("RangedAimNumber");
+    public static int ReloadNumber = Animator.StringToHash("ReloadNumber");
 }
 
 public class LocomotionSystem : MonoBehaviour
@@ -31,9 +33,10 @@ public class LocomotionSystem : MonoBehaviour
     public const float AnimatorSprintSpeedDefault = 0.7f;
 
     [HideInInspector] public float AnimatorMaxSpeedMultiplier = 1f;
-    [HideInInspector] public float MovementSpeedMultiplier => MovementSpeedMultiplierMoveState * MovementSpeedMultiplierHandState * _human._HealthSystem._MovementSpeedMultiplierHealthState;
+    [HideInInspector] public float MovementSpeedMultiplier => Mathf.Clamp(MovementSpeedMultiplierMoveState * MovementSpeedMultiplierHandState * MovementSpeedMultiplierCarryCapacity * _human._HealthSystem._MovementSpeedMultiplierHealthState, 0.5f, 1.5f);
     [HideInInspector] public float MovementSpeedMultiplierMoveState = 1f;
     [HideInInspector] public float MovementSpeedMultiplierHandState = 1f;
+    [HideInInspector] public float MovementSpeedMultiplierCarryCapacity => 1.25f - 0.25f * Mathf.Clamp(_human._CarryCapacityRate, 0f, 3f);
 
     public float GetAnimatorSprintSpeed()
     {
@@ -95,7 +98,7 @@ public class LocomotionSystem : MonoBehaviour
     public Vector3 moveDirection;                     // used to know the direction you're moving 
     #endregion
 
-    private void OnDestroy()
+    /*private void OnDestroy()
     {
         if (transform.parent != null && transform.parent.GetComponent<NPC>() != null)//npc destroyed
         {
@@ -107,7 +110,7 @@ public class LocomotionSystem : MonoBehaviour
             if (npc._BackCarryItemRef != null)
                 npc._BackCarryItemRef.DespawnBackCarryItem();
         }
-    }
+    }*/
     public void Init()
     {
         _human = transform.parent == null ? GetComponent<Humanoid>() : transform.parent.GetComponent<Humanoid>();
@@ -145,6 +148,13 @@ public class LocomotionSystem : MonoBehaviour
 
         _human._IsGrounded = true;
     }
+    private float GetRangedNumber()
+    {
+        if(!(_human._HandState is RangedWeaponHandState state)) { Debug.LogError("Ranged number error state not found!"); return 0f; }
+        if (state._RangedWeapon == null) { Debug.LogError("Ranged weapon is null! ranged number returns 0f"); return 0f; }
+
+        return state._RangedWeapon._IsCrossbow ? 1f : 2f;
+    }
     public virtual void UpdateAnimator()
     {
         if (_human._Animator == null || !_human._Animator.enabled) return;
@@ -152,12 +162,18 @@ public class LocomotionSystem : MonoBehaviour
 
         if (_human._Animator.GetBool(AnimatorParameters.IsInCombatMode) != _human._IsInCombatMode)
             _human._Animator.SetBool(AnimatorParameters.IsInCombatMode, _human._IsInCombatMode);
+        if ((_human._Animator.GetFloat(AnimatorParameters.RangedAimNumber) != 0f) != _human._IsInRangedAim)
+            _human._Animator.SetFloat(AnimatorParameters.RangedAimNumber, _human._IsInRangedAim ? (GetRangedNumber()) : 0f);
+        if ((_human._Animator.GetFloat(AnimatorParameters.ReloadNumber) != 0f) != _human._IsReloading)
+            _human._Animator.SetFloat(AnimatorParameters.ReloadNumber, _human._IsReloading ? (GetRangedNumber()) : 0f);
+        if (_human._Animator.GetBool(AnimatorParameters.IsBlocking) != _human._IsBlocking)
+            _human._Animator.SetBool(AnimatorParameters.IsBlocking, _human._IsBlocking);
 
         bool isGoingLeft = _human._Animator.GetFloat(AnimatorParameters.InputHorizontal) < 0f;
         if (_human._Animator.GetBool(AnimatorParameters.IsGoingLeft) != isGoingLeft)
             _human._Animator.SetBool(AnimatorParameters.IsGoingLeft, isGoingLeft);
 
-        if(_human._HandState is WeaponHandState)
+        if (_human._HandState is MeleeWeaponHandState)
         {
             int targetAnimNumber = 0;
             if (_human._LeftHandEquippedItemRef == null && _human._RightHandEquippedItemRef == null)
@@ -208,8 +224,6 @@ public class LocomotionSystem : MonoBehaviour
 
         if (_human._IsStrafing)
         {
-            if (_human._Animator.GetBool(AnimatorParameters.IsBlocking) != _human._IsBlocking)
-                _human._Animator.SetBool(AnimatorParameters.IsBlocking, _human._IsBlocking);
             if (_human._Animator.GetFloat(AnimatorParameters.InputHorizontal) != (_human._StopMove ? 0 : horizontalSpeed))
                 _human._Animator.SetFloat(AnimatorParameters.InputHorizontal, _human._StopMove ? 0 : horizontalSpeed, AimingMovementSetting.animationSmooth, Time.deltaTime);
             if (_human._Animator.GetFloat(AnimatorParameters.InputVertical) != (_human._StopMove ? 0 : verticalSpeed))

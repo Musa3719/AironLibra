@@ -4,7 +4,7 @@ using UnityEngine;
 public class AttackColliderHandle : MonoBehaviour, ICanDamage
 {
     public Vector3 _AttackForward { get; set; }
-    private Weapon _FromWeapon;
+    public Weapon _FromWeapon { get; set; }
 
     private List<ICanGetHurt> _alreadyHit = new List<ICanGetHurt>();
     private void Awake()
@@ -15,7 +15,7 @@ public class AttackColliderHandle : MonoBehaviour, ICanDamage
         if (transform.parent.gameObject.name.Contains("Punch") || transform.parent.gameObject.name.Contains("Claw") || transform.parent.gameObject.name.Contains("Kick"))
         {
             _FromWeapon._ConnectedItem = new WeaponItem(Default_MeleeWeapon._Instance);
-            _FromWeapon._ConnectedItem._EquippedHumanoid = GetHurtable(GetComponent<Collider>()) as Humanoid;
+            _FromWeapon._ConnectedItem._EquippedHumanoid = ICanDamageMethods.GetHurtable(GetComponent<Collider>()) as Humanoid;
             (_FromWeapon._ConnectedItem._ItemDefinition as Default_MeleeWeapon).SetDamageOverride(_FromWeapon._ConnectedItem._EquippedHumanoid._DefaultMeleeWeaponDamage);
         }
     }
@@ -23,13 +23,13 @@ public class AttackColliderHandle : MonoBehaviour, ICanDamage
     {
         _alreadyHit.Clear();
     }
-    public void OnTrigger(Collider other)
+    public void OnTriggerEnter(Collider other)
     {
         if (other == null) return;
         if (!other.isTrigger) return;
-        if (!IsHitBox(other)) return;
+        if (!ICanDamageMethods.IsHitBox(other)) return;
 
-        ICanGetHurt hurtable = GetHurtable(other);
+        ICanGetHurt hurtable = ICanDamageMethods.GetHurtable(other);
         if (hurtable == (_FromWeapon._ConnectedItem._EquippedHumanoid as ICanGetHurt)) return;
         if (_alreadyHit.Contains(hurtable)) return;
         _alreadyHit.Add(hurtable);
@@ -44,90 +44,27 @@ public class AttackColliderHandle : MonoBehaviour, ICanDamage
         {
             if (hurtable._IsBlocking)
             {
-                if (GetBlockAngle(hurtable._Transform.forward, _AttackForward) < 80f)
-                    GiveDamage(other, hurtable);
+                if (ICanDamageMethods.GetBlockAngle(hurtable._Transform.forward, _AttackForward) < 80f)
+                    ICanDamageMethods.GiveDamage(this,other, hurtable);
                 else
                 {
                     if (hurtable._IsHandsEmpty)
                     {
-                        hurtable.Blocked(InitDamage(other));
-                        GiveDamage(other, hurtable, true);
+                        hurtable.Blocked(ICanDamageMethods.InitDamage(this,other));
+                        ICanDamageMethods.GiveDamage(this, other, hurtable, true);
                     }
-                    else if (hurtable._LastTimeTriedParry + hurtable._ParryTime > Time.time)
+                    else if (hurtable._LastTimeTriedParry + hurtable._ParryTime > Time.timeAsDouble)
                         HandStateMethods.AttackGotParried(_FromWeapon._ConnectedItem._EquippedHumanoid, _AttackForward);
-                    else if (hurtable._LastTimeTriedParry + hurtable._ParryOverTime > Time.time)
+                    else if (hurtable._LastTimeTriedParry + hurtable._ParryOverTime > Time.timeAsDouble)
                         HandStateMethods.ParryFailed(hurtable as Humanoid, _AttackForward);
                     else
-                        hurtable.Blocked(InitDamage(other));
+                        hurtable.Blocked(ICanDamageMethods.InitDamage(this, other));
                 }
             }
             else
             {
-                GiveDamage(other, hurtable);
+                ICanDamageMethods.GiveDamage(this, other, hurtable);
             }
         }
-    }
-    private float GetBlockAngle(Vector3 hurtableTransformForward, Vector3 attackerTransformForward)
-    {
-        return Vector2.Angle(new Vector2(hurtableTransformForward.x, hurtableTransformForward.z), new Vector2(attackerTransformForward.x, attackerTransformForward.z));
-    }
-    private void GiveDamage(Collider other, ICanGetHurt hurtable, bool isDamageToHands = false)
-    {
-        InitDamage(other, isDamageToHands).Inflict(hurtable, (_FromWeapon as MeleeWeapon)._HeavyAttackMultiplier);
-    }
-
-    private Damage InitDamage(Collider other, bool isDamageToHands = false)
-    {
-        _FromWeapon._Damage = new Damage();
-        DamageType damageType = (_FromWeapon._ConnectedItem._ItemDefinition as ICanBeEquippedForDefinition)._DamageType;
-        DamagePart damagePart = isDamageToHands ? DamagePart.Hands : GetDamagePartFromBoneName(other.name);
-        float damageAmount = (_FromWeapon._ConnectedItem._ItemDefinition as ICanBeEquippedForDefinition)._Value;
-        Vector3 dir = (_FromWeapon as MeleeWeapon).GetHitDirection();
-        Vector3 attackerDirection = _FromWeapon._ConnectedItem._EquippedHumanoid.transform.forward;
-        _FromWeapon._Damage.Init(damageType, damagePart, damageAmount, dir, attackerDirection, (_FromWeapon as MeleeWeapon)._AttackDirectionFrom);
-        return _FromWeapon._Damage;
-    }
-    private DamagePart GetDamagePartFromBoneName(string nameStr)
-    {
-        if (nameStr == "Head" || nameStr == "Neck")
-        {
-            return DamagePart.Head;
-        }
-        else if (nameStr == "LeftForeArm" || nameStr == "LeftHand" || nameStr == "RightForeArm" || nameStr == "RightHand")
-        {
-            return DamagePart.Hands;
-        }
-        else if (nameStr == "RightUpLeg" || nameStr == "RightLeg" || nameStr == "LeftUpLeg" || nameStr == "LeftLeg")
-        {
-            return DamagePart.Legs;
-        }
-        else if (nameStr == "RightFoot" || nameStr == "LeftFoot")
-        {
-            return DamagePart.Feet;
-        }
-        return DamagePart.Chest;
-    }
-
-    public bool IsHitBox(Collider other)
-    {
-        if (other.gameObject.layer == LayerMask.NameToLayer("HitBox"))
-            return true;
-        return false;
-    }
-    public ICanGetHurt GetHurtable(Collider other)
-    {
-        if (!IsHitBox(other)) return null;
-
-        Transform parent = other.transform;
-        ICanGetHurt component;
-        while (parent.parent != null)
-        {
-            parent = parent.parent;
-            if (parent.gameObject.TryGetComponent(out component))
-            {
-                return component;
-            }
-        }
-        return null;
     }
 }

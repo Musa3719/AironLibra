@@ -1,13 +1,19 @@
 using System.Collections;
 using System.Collections.Generic;
+using UMA;
 using UnityEngine;
 using UnityEngine.AI;
+using UnityEngine.UIElements;
 
 public class NPC : Humanoid
 {
+    private Transform _ownTransform;
     public ushort _NpcIndex;
     public NpcLogic _NpcLogic;
     public NpcDialogue _NpcDialogue;
+    public Vector3 _Pos;
+    [HideInInspector] public float _UpdateNpcCounter;
+    [HideInInspector] public bool? _NpcRequestForPathfinding;
     public override Vector2 _DirectionInput => _directionCurrent;
     public GameObject _TargetPoolNPC { get; private set; }
     public Vector3 _LastCornerFromPath { get; private set; }
@@ -24,31 +30,50 @@ public class NPC : Humanoid
     private float _stuckArrangingTimer;
     private Vector3 _stuckArrangingPosition;
     private float _stuckThreshold = 2f;
-    private float _lastTimeJumped;
+    private double _lastTimeJumped;
     private float _nextPositionCheckCounter;
-    private float _nextPositionCheckThreshold = 0.1f;
+    private float _nextPositionCheckThresholdForUse => _IsSprinting ? _nextPositionCheckThreshold / 2.5f : _nextPositionCheckThreshold;
+    private float _nextPositionCheckThreshold = 0.4f;
     private float _cliffCheckForwardForDir;
     private float _cliffCheckForwardForVel;
-    private float _tryToCreatePathTimer;
-    private float _tryToCreatePathThreshold = 1f;
+    private float _runtimeLoadUnloadCounter;
+    private float _arrangeDistanceCounter;
+    private float _arrangPosCounter;
+    private float _arrangDirecitonCounter;
+    public Vector3 _DistanceToPlayer { get; private set; }
+    public int _NpcDistanceListIndex { get; set; }
+
     public Vector3 _MoveTargetPosition { get; set; }
-    public Vector3 _AimPosition { get; set; }
     public bool _IsOnLinkMovement { get; private set; }
 
+    private Coroutine _destroyMeshCoroutine;
     private Coroutine _attackReadyCoroutine;
 
     private Vector3 _checkCornerDist;
 
+    private Ray _ray;
+    private RaycastHit[] _checkForwardHit;
+
     protected override void Awake()
     {
+        _ownTransform = transform;
+        _ray = new Ray();
+        _checkForwardHit = new RaycastHit[1];
+        _DistanceToPlayer = 200f * Vector3.one;
+        _NpcDistanceListIndex = 2000;
+        Random.InitState(System.DateTime.Now.Millisecond + GetInstanceID());
+        _UpdateNpcCounter = Random.Range(2f, 5f);
+        _arrangeDistanceCounter = Random.Range(0f, 2f);
+        _runtimeLoadUnloadCounter = Random.Range(0f, 1f);
+        _arrangPosCounter = Random.Range(0f, 0.1f);
+        _arrangDirecitonCounter = Random.Range(0f, 0.1f);
+        _nextPositionCheckCounter = Random.Range(0f, _nextPositionCheckThreshold);
         if (_Class == null)
             _Class = new Peasant();//
 
         _NpcLogic = new NpcLogic(this);
         _NpcDialogue = new NpcDialogue(this);
 
-        _tryToCreatePathTimer = Random.Range(0f, _tryToCreatePathThreshold);
-        _nextPositionCheckCounter = Random.Range(0f, _nextPositionCheckThreshold);
 
         _isPathEnded = true;
         _Rigidbody = GetComponent<Rigidbody>();
@@ -76,38 +101,69 @@ public class NPC : Humanoid
 
         Stop();
         base.Start();
+        _Pos = _ownTransform.position;
+        ArrangeNewMovementTarget(_Pos);
     }
     private void OnDestroy()
     {
         NPCManager.RemoveFromList(this);
     }
 
-    public void UpdateWhenAway()
+    public void UpdateNpc()
     {
         _NpcLogic.UpdateLogic();
     }
     protected override void Update()
     {
-        if (transform.childCount == 0) { enabled = false; return; }
         if (GameManager._Instance._IsGameStopped) return;
+
+        _arrangPosCounter += Time.deltaTime;
+        if (_arrangPosCounter > 0.1f)
+        {
+            _Pos = _ownTransform.position;
+            _arrangPosCounter = 0f;
+        }
+
+        _arrangeDistanceCounter += Time.deltaTime;
+        if (_arrangeDistanceCounter > 2f)
+        {
+            _DistanceToPlayer = GameManager._Instance._PlayerPos - _Pos;
+            _arrangeDistanceCounter = 0f;
+        }
+
+        ControlUmaDataRuntimeLoadUnload();
 
         if (_UmaDynamicAvatar != null)
         {
             DisableInputs();
 
-            ArrangePath();
-            ArrangeDirection();
-            ArrangeStuck();
-            CheckNextPosition();
+            if (GameManager._Instance._Is1)
+                ArrangePath();
+            if (GameManager._Instance._Is2)
+                ArrangeDirection();
+            if (GameManager._Instance._Is3)
+                ArrangeStuck();
+            if (GameManager._Instance._Is4)
+                CheckNextPosition();
         }
 
-        base.Update();
+        if (GameManager._Instance._Is5)
+        {
+            _Rigidbody.linearVelocity= new Vector3(1f, 0f, 1f) * 4f;
+        }
+
+        if (false)
+            base.Update();
+
+        if (_UmaDynamicAvatar != null && _MovementState != null && false)
+            _MovementState.FixedUpdate();
 
         if (_InteractInput)
         {
             CheckForNearItemHolders(false, out InventoryHolder nearestInventoryHolder, out CarriableObject nearestCarriable);
             ///take send equip unequip if public, if not steal or trade 
         }
+
         //testing
         //ArrangeNewMovementTarget(WorldHandler._Instance._Player.transform.position);
 
@@ -123,15 +179,16 @@ public class NPC : Humanoid
             _IsMale = true;*/
         if (M_Input.GetKeyDownForTesting(KeyCode.G))
             TryAttacking(false, 0.15f);
+        if (M_Input.GetKeyDownForTesting(KeyCode.J))
+            RangedAimToTransform(WorldHandler._Instance._Player.transform);
         //WorldAndNpcCreation.SetGender(_UmaDynamicAvatar, Random.Range(0, 2) == 0);
         //WorldAndNpcCreation.ChangeColor(_UmaDynamicAvatar, "Skin", Color.red);
         if (M_Input.GetKeyDownForTesting(KeyCode.M))
-            ArrangeNewMovementTarget(GameObject.Find("TargetPositionTest").transform.position);
+            ArrangeNewMovementTarget(WorldHandler._Instance._TestTransform.position);
         if (M_Input.GetKeyForTesting(KeyCode.N))
             _SprintInput = true;
         else
             _SprintInput = false;
-
     }
 
     public void DisableInputs()
@@ -145,9 +202,24 @@ public class NPC : Humanoid
     {
         if (!HandStateMethods.IsAttackPossible(this)) return;
 
-        HandStateMethods.ArrangeIsAttackingFromLeftHand(this);
-        HandStateMethods.ReadyAttackAnimation(this, HandStateMethods.GetCurrentWeaponType(this, _IsAttackingFromLeftHandWeapon));
-        GameManager._Instance.CoroutineCall(ref _attackReadyCoroutine, AttackReadyCoroutine(isPunch, targetAttackReadyTime), this);
+        if (_HandState is MeleeWeaponHandState)
+        {
+            HandStateMethods.ArrangeIsAttackingFromLeftHand(this);
+            HandStateMethods.ReadyAttackAnimation(this, HandStateMethods.GetCurrentWeaponType(this, _IsAttackingFromLeftHandWeapon));
+            GameManager._Instance.CoroutineCall(ref _attackReadyCoroutine, AttackReadyCoroutine(isPunch, targetAttackReadyTime), this);
+        }
+        else if (_HandState is RangedWeaponHandState state && _IsInRangedAim)
+        {
+            _LightAttackInput = true;
+        }
+    }
+    public void RangedAimToTransform(Transform target)
+    {
+        if (_HandState is RangedWeaponHandState state && HandStateMethods.IsRangedAimPossible(this))
+        {
+            _AimInput = true;
+            _AimPosition = target.position;
+        }
     }
     private IEnumerator AttackReadyCoroutine(bool isPunch, float targetAttackReadyTime)
     {
@@ -195,30 +267,183 @@ public class NPC : Humanoid
     {
         if (transform.childCount == 0) return;
 
-        if (_ChangeShaderCompleted)
-        {
-            if (!transform.GetChild(0).name.StartsWith("NPC")) Debug.LogError("0 index child is not NPC!");
-            _TargetPoolNPC = transform.GetChild(0).gameObject;
-            GameManager._Instance._NPCPool.GameObjectToPool(transform.GetChild(0).gameObject);
-        }
-        else
-            Destroy(transform.GetChild(0).gameObject);
+        if (!transform.GetChild(0).name.StartsWith("NPC")) Debug.LogError("0 index child is not NPC!");
+        _TargetPoolNPC = transform.GetChild(0).gameObject;
+        GameManager._Instance._NPCPool.GameObjectToPool(transform.GetChild(0).gameObject);
 
         _Rigidbody.isKinematic = true;
         _Rigidbody.Sleep();
         DisableInputs();
         enabled = false;
     }
+    private void ControlUmaDataRuntimeLoadUnload()
+    {
+        _runtimeLoadUnloadCounter += Time.deltaTime;
+        if (_runtimeLoadUnloadCounter < 1f) return;
+        _runtimeLoadUnloadCounter = 0f;
+
+        if (_DistanceToPlayer.sqrMagnitude < 900f) //30
+            EnableHumanData();
+        else if (_DistanceToPlayer.sqrMagnitude > 1600f) //40
+            DisableHumanData();
+        /*if (IsInNearestNPCs())
+            transform.Find("NPC(Clone)").Find("Canvas").Find("Test").GetComponent<UnityEngine.UI.Image>().enabled = true;
+        else
+            transform.Find("NPC(Clone)").Find("Canvas").Find("Test").GetComponent<UnityEngine.UI.Image>().enabled = false;*/
+        if (IsInNearestNPCs())
+            EnableHumanAdditionals();
+        else
+            DisableHumanAdditionals();
+
+    }
+    private bool IsInNearestNPCs()
+    {
+        return _NpcDistanceListIndex < (Options._Instance._Quality == 0 ? 5 : (Options._Instance._Quality == 1 ? 10 : 20));
+    }
+    private void SetHumanLayer(int layer)
+    {
+        gameObject.layer = layer;
+        Transform child = transform.GetChild(0);
+        child.gameObject.layer = layer;
+        child.Find("ProneCollider").gameObject.layer = layer;
+        child.Find("CrouchCollider").gameObject.layer = layer;
+        child.Find("char").gameObject.layer = layer;
+        child.Find("char/MainCollider").gameObject.layer = layer;
+    }
+    private void EnableHumanData()
+    {
+        if (_UmaDynamicAvatar.BuildCharacterEnabled) return;
+
+        if (_destroyMeshCoroutine != null)
+            StopCoroutine(_destroyMeshCoroutine);
+
+        SetHumanLayer(LayerMask.NameToLayer("HumanNear"));
+        SetGender(_IsMale);
+        SetDna(true);
+        SetWardrobe();
+
+        if (_CharacterColors != null)
+        {
+            foreach (var color in _CharacterColors)
+            {
+                ChangeColor(color.Key, color.Value);
+            }
+        }
+
+        _Animator.enabled = true;
+        _UmaDynamicAvatar.BuildCharacterEnabled = true;
+    }
+    private void DisableHumanData()
+    {
+        //if (!_UmaDynamicAvatar.BuildCharacterEnabled) return;
+        if (_SkinnedMeshRenderer == null || _SkinnedMeshRenderer.sharedMesh == null) return;
+
+        _UmaDynamicAvatar.BuildCharacterEnabled = false;
+        SetHumanLayer(LayerMask.NameToLayer("HumanFar"));
+
+        if (_RightHandEquippedItemRef != null)
+            _RightHandEquippedItemRef.DespawnHandItem();
+        if (_LeftHandEquippedItemRef != null)
+            _LeftHandEquippedItemRef.DespawnHandItem();
+        if (_BackCarryItemRef != null)
+            _BackCarryItemRef.DespawnBackCarryItem();
+
+        _Animator.enabled = false;
+        DisableHumanAdditionals();
+
+        GameManager._Instance.CoroutineCall(ref _destroyMeshCoroutine, DestroyMeshCoroutine(), this);
+    }
+    private IEnumerator DestroyMeshCoroutine()
+    {
+        while (_UmaDynamicAvatar.umaData != null && (_UmaDynamicAvatar.umaData.isMeshDirty || _UmaDynamicAvatar.umaData.isTextureDirty || _UmaDynamicAvatar.umaData.isAtlasDirty))
+            yield return null;
+
+        if (_SkinnedMeshRenderer != null && _SkinnedMeshRenderer.sharedMesh != null)
+        {
+            Destroy(_SkinnedMeshRenderer.sharedMesh);
+            _SkinnedMeshRenderer.sharedMesh = null;
+        }
+
+        if (_UmaDynamicAvatar.umaData != null)
+        {
+            _UmaDynamicAvatar.umaData.CleanAvatar();
+            _UmaDynamicAvatar.umaData.CleanMesh(false);
+            _UmaDynamicAvatar.umaData.CleanTextures();
+        }
+    }
+    private void EnableHumanAdditionals()
+    {
+        if (_MovementState is UnconsciousMoveState) return;
+
+        if (!_TwistBones.enabled)
+            _TwistBones.enabled = true;
+
+        if (Options._Instance._IsExpressionPlayerEnabled)
+        {
+            if (!_ExpressionPlayer.enabled)
+                _ExpressionPlayer.enabled = true;
+        }
+        else
+        {
+            if (_ExpressionPlayer.enabled)
+                _ExpressionPlayer.enabled = false;
+        }
+        if (Options._Instance._IsLeaningEnabled)
+        {
+            if (!_LeaninganimatorComponent.enabled)
+                _LeaninganimatorComponent.enabled = true;
+        }
+        else
+        {
+            if (_LeaninganimatorComponent.enabled)
+                _LeaninganimatorComponent.enabled = false;
+        }
+
+        if (Options._Instance._IsFootIKEnabled && ((_MovementState is LocomotionState) || (_MovementState is CrouchMoveState)))
+        {
+            if (!_FootIKComponent.enabled)
+                _FootIKComponent.enabled = true;
+        }
+        else
+        {
+            if (_FootIKComponent.enabled)
+                _FootIKComponent.enabled = false;
+        }
+    }
+    public void DisableHumanAdditionals()
+    {
+        if (_TwistBones.enabled)
+            _TwistBones.enabled = false;
+        if (_ExpressionPlayer.enabled)
+            _ExpressionPlayer.enabled = false;
+        if (_LeaninganimatorComponent.enabled)
+            _LeaninganimatorComponent.enabled = false;
+        if (_FootIKComponent.enabled)
+            _FootIKComponent.enabled = false;
+        if (_FootIKComponent.enabled)
+            _FootIKComponent.enabled = false;
+    }
+
     private void ArrangeDirection()
     {
+        _arrangDirecitonCounter += Time.deltaTime;
+        if (_arrangDirecitonCounter < 0.1f)
+            return;
+        _arrangDirecitonCounter = 0f;
+
         if (_isPathEnded)
         {
-            _directionCurrent = Vector2.Lerp(_directionCurrent, Vector2.zero, Time.deltaTime * 12f);
+            if (_directionCurrent != Vector2.zero)
+            {
+                _directionCurrent = Vector2.Lerp(_directionCurrent, Vector2.zero, Time.deltaTime * 12f);
+                if (_directionCurrent.sqrMagnitude < 0.05f)
+                    _directionCurrent = Vector2.zero;
+            }
             return;
         }
 
-        _directionInputFromPath = new Vector2(_LastCornerFromPath.x - transform.position.x, _LastCornerFromPath.z - transform.position.z).normalized;
-        if (Vector2.Dot(_directionCurrent, _directionInputFromPath) < 0.1f)
+        _directionInputFromPath = new Vector2(_LastCornerFromPath.x - _Pos.x, _LastCornerFromPath.z - _Pos.z).normalized;
+        if (Vector2.Dot(_directionCurrent, _directionInputFromPath) < 0f)
             _directionCurrent = Vector2.zero;
         _directionCurrent = Vector2.Lerp(_directionCurrent, _directionInputFromPath, Time.deltaTime * 8f).normalized;
     }
@@ -237,7 +462,7 @@ public class NPC : Humanoid
             if (_stuckOnPathTimer > _stuckThreshold * 0.5f && _stuckArrangingTimer == 0f)
             {
                 _stuckArrangingTimer = 1f;
-                _stuckArrangingPosition = transform.position;
+                _stuckArrangingPosition = _Pos;
                 _stuckArrangingPosition.y = 0f;
                 TryJump();
             }
@@ -245,7 +470,7 @@ public class NPC : Humanoid
             {
                 _stuckArrangingTimer = 0f;
                 _stuckOnPathTimer = 0f;
-                if ((_stuckArrangingPosition - new Vector3(transform.position.x, 0f, transform.position.z)).magnitude < 0.2f)
+                if ((_stuckArrangingPosition - new Vector3(_Pos.x, 0f, _Pos.z)).magnitude < 0.2f)
                 {
                     Vector3 target = _MoveTargetPosition;
                     Stop(true);
@@ -259,27 +484,31 @@ public class NPC : Humanoid
     {
         if (_isPathEnded) return;
 
-        if (_nextPositionCheckCounter <= _nextPositionCheckThreshold)
+        if (_nextPositionCheckCounter < _nextPositionCheckThresholdForUse)
         {
             _nextPositionCheckCounter += Time.deltaTime;
         }
         else
         {
-            _nextPositionCheckCounter -= _nextPositionCheckThreshold;
+            _nextPositionCheckCounter -= _nextPositionCheckThresholdForUse;
 
             //check for cliff
             bool isStopping;
             Vector3 directionInput = new Vector3(_Rigidbody.linearVelocity.x, 0f, _Rigidbody.linearVelocity.z);
             _cliffCheckForwardForVel = Mathf.Lerp(_cliffCheckForwardForVel, directionInput.magnitude < 0.1f ? 1f : (_IsSprinting ? 3.25f : 1.5f), Time.deltaTime * 2f);
             //Debug.DrawRay(transform.position + Vector3.up * 0.8f + directionInput.normalized * _cliffCheckForwardForVel, -Vector3.up);
-            Physics.Raycast(transform.position + Vector3.up * 0.8f + directionInput.normalized * _cliffCheckForwardForVel, -Vector3.up, out RaycastHit hit, 8f, GameManager._Instance._TerrainSolidAndWaterMask);
-            isStopping = hit.collider == null;
+            _ray.origin = _Pos + Vector3.up * 0.8f + directionInput.normalized * _cliffCheckForwardForVel;
+            _ray.direction = -Vector3.up;
+            Physics.RaycastNonAlloc(_ray, _checkForwardHit, 8f, GameManager._Instance._TerrainSolidWaterMask);
+            isStopping = _checkForwardHit[0].collider == null;
 
             directionInput = GameManager._Instance.Vector2ToVector3(_DirectionInput);
             _cliffCheckForwardForDir = Mathf.Lerp(_cliffCheckForwardForDir, directionInput.magnitude < 0.1f ? 1f : (_IsSprinting ? 3.25f : 1.5f), Time.deltaTime * 2f);
             //Debug.DrawRay(transform.position + Vector3.up * 0.8f + directionInput.normalized * _cliffCheckForwardForDir, -Vector3.up);
-            Physics.Raycast(transform.position + Vector3.up * 0.8f + directionInput.normalized * _cliffCheckForwardForDir, -Vector3.up, out hit, 8f, GameManager._Instance._TerrainSolidAndWaterMask);
-            isStopping = isStopping ? isStopping : hit.collider == null;
+            _ray.origin = _Pos + Vector3.up * 0.8f + directionInput.normalized * _cliffCheckForwardForDir;
+            _ray.direction = -Vector3.up;
+            Physics.RaycastNonAlloc(_ray, _checkForwardHit, 8f, GameManager._Instance._TerrainSolidWaterMask);
+            isStopping = isStopping ? isStopping : _checkForwardHit[0].collider == null;
 
             if (isStopping)
             {
@@ -290,20 +519,28 @@ public class NPC : Humanoid
             }
 
             //check for obstacle
-            if (Physics.Raycast(transform.position + Vector3.up * 0.2f, -Vector3.up, out hit, 1f, GameManager._Instance._TerrainAndSolidMask))
+            _ray.origin = _Pos + Vector3.up * 0.2f;
+            _ray.direction = -Vector3.up;
+            Physics.RaycastNonAlloc(_ray, _checkForwardHit, 8f, GameManager._Instance._TerrainSolidMask);
+            if (_checkForwardHit[0].collider != null)
             {
                 Vector3 rayDirection = new Vector3(_Rigidbody.linearVelocity.x, 0f, _Rigidbody.linearVelocity.z).normalized;
-                if (hit.normal != Vector3.zero)
+                if (_checkForwardHit[0].normal != Vector3.zero)
                 {
-                    rayDirection = Vector3.Cross(Vector3.Cross(hit.normal, rayDirection), hit.normal).normalized;
+                    rayDirection = Vector3.Cross(Vector3.Cross(_checkForwardHit[0].normal, rayDirection), _checkForwardHit[0].normal).normalized;
                 }
 
-                if (Physics.Raycast(transform.position + Vector3.up * 0.2f, rayDirection, out hit, Mathf.Clamp(_Rigidbody.linearVelocity.magnitude * 0.3f, 1f, float.MaxValue), GameManager._Instance._TerrainAndSolidMask))
+                _ray.origin = _Pos + Vector3.up * 0.2f;
+                _ray.direction = rayDirection;
+                Physics.RaycastNonAlloc(_ray, _checkForwardHit, 8f, GameManager._Instance._TerrainSolidMask);
+                if (_checkForwardHit[0].collider != null)
                 {
-                    if (hit.collider != null && Vector3.Dot(hit.normal, Vector3.up) < 0.3f)
+                    if (_checkForwardHit[0].collider != null && Vector3.Dot(_checkForwardHit[0].normal, Vector3.up) < 0.3f)
                     {
-                        Physics.Raycast(transform.position + Vector3.up * 0.8f, rayDirection, out hit, Mathf.Clamp(_Rigidbody.linearVelocity.magnitude * 0.3f, 1f, float.MaxValue), GameManager._Instance._TerrainAndSolidMask);
-                        if (hit.collider == null)
+                        _ray.origin = _Pos + Vector3.up * 0.8f;
+                        _ray.direction = rayDirection;
+                        Physics.RaycastNonAlloc(_ray, _checkForwardHit, 8f, GameManager._Instance._TerrainSolidMask);
+                        if (_checkForwardHit[0].collider == null)
                             TryJump();
                     }
                 }
@@ -312,9 +549,9 @@ public class NPC : Humanoid
     }
     private void TryJump()
     {
-        if (_lastTimeJumped + 1f < Time.time)
+        if (_lastTimeJumped + 1 < Time.timeAsDouble)
         {
-            _lastTimeJumped = Time.time;
+            _lastTimeJumped = Time.timeAsDouble;
             _JumpInput = true;
         }
     }
@@ -322,12 +559,12 @@ public class NPC : Humanoid
     public void Stop(bool willRetry = false)
     {
         _cornersFromPath.Clear();
-        _LastCornerFromPath = transform.position;
+        _LastCornerFromPath = _Pos;
         _directionInputFromPath = Vector2.zero;
         _directionCurrent = Vector2.zero;
         _isPathEnded = true;
         if (!willRetry)
-            _MoveTargetPosition = transform.position;
+            _MoveTargetPosition = _Pos;
     }
     public void ArrangeNewMovementTarget(Vector3 targetPos)
     {
@@ -335,37 +572,32 @@ public class NPC : Humanoid
     }
     private void ArrangePath()
     {
-        if (Vector3.Distance(_MoveTargetPosition, transform.position) < 0.5f) return;
+        Vector3 dist = (_MoveTargetPosition - _Pos);
+        if (new Vector3(dist.x, 0f, dist.z).sqrMagnitude < 1f) { Stop(); return; }
+        if (!_isPathEnded) return;
 
-        if (!_isPathEnded)
-        {
-            if (_tryToCreatePathTimer < _tryToCreatePathThreshold)
-            {
-                _tryToCreatePathTimer += Time.deltaTime;
-                return;
-            }
-            _tryToCreatePathTimer -= _tryToCreatePathThreshold;
-        }
+        if (_NpcRequestForPathfinding == null)
+            _NpcRequestForPathfinding = false;
+        if (!_NpcRequestForPathfinding.HasValue || !_NpcRequestForPathfinding.Value)
+            return;
 
-
-        Vector3 dist = (_MoveTargetPosition - transform.position);
-        if (new Vector3(dist.x, 0f, dist.z).magnitude < 1f) { Stop(); return; }
+        _NpcRequestForPathfinding = null;
 
         Vector3 segmentatedTarget = _MoveTargetPosition;
-        if (new Vector3(dist.x, 0f, dist.z).magnitude > _segmentationMagnitude)
+        if (new Vector3(dist.x, 0f, dist.z).sqrMagnitude > _segmentationMagnitude * _segmentationMagnitude)
         {
-            segmentatedTarget = transform.position + new Vector3((_MoveTargetPosition - transform.position).x, transform.position.y, (_MoveTargetPosition - transform.position).z).normalized * _segmentationMagnitude;
+            segmentatedTarget = _Pos + new Vector3((_MoveTargetPosition - _Pos).x, _Pos.y, (_MoveTargetPosition - _Pos).z).normalized * _segmentationMagnitude;
             //segmentatedTarget = GetWalkableTerrainPosition(segmentatedTarget);
         }
         _CurrentPath.ClearCorners();
-        NavMesh.CalculatePath(transform.position, segmentatedTarget, NavMesh.AllAreas, _CurrentPath);
+        NavMesh.CalculatePath(_Pos, segmentatedTarget, NavMesh.AllAreas, _CurrentPath);
         _isPathEnded = false;
         _cornersFromPath.Clear();
-        _nextPositionCheckCounter = 1f;
-        if ((_CurrentPath.corners.Length <= 1 || Vector3.Distance(_CurrentPath.corners[0], _CurrentPath.corners[1]) < 0.5f) && Vector3.Distance(transform.position, segmentatedTarget) > 0.5f)
+        _nextPositionCheckCounter = _nextPositionCheckThresholdForUse;
+        if ((_CurrentPath.corners.Length <= 1 || Vector3.Distance(_CurrentPath.corners[0], _CurrentPath.corners[1]) < 0.5f) && Vector3.Distance(_Pos, segmentatedTarget) > 0.5f)
         {
             _CurrentPath.ClearCorners();
-            _cornersFromPath.Add(transform.position);
+            _cornersFromPath.Add(_Pos);
             _cornersFromPath.Add(segmentatedTarget);
         }
         foreach (var corner in _CurrentPath.corners)
@@ -376,7 +608,7 @@ public class NPC : Humanoid
         if (_cornersFromPath.Count > 1)
         {
             _LastCornerFromPath = _cornersFromPath[1];
-            _directionInputFromPath = new Vector2(_cornersFromPath[1].x - transform.position.x, _cornersFromPath[1].z - transform.position.z).normalized;
+            _directionInputFromPath = new Vector2(_cornersFromPath[1].x - _Pos.x, _cornersFromPath[1].z - _Pos.z).normalized;
             _cornersFromPath.RemoveAt(1);
             _cornersFromPath.RemoveAt(0);
         }
@@ -391,7 +623,7 @@ public class NPC : Humanoid
     {
         if (_isPathEnded) return;
 
-        _checkCornerDist = _LastCornerFromPath - transform.position;
+        _checkCornerDist = _LastCornerFromPath - _Pos;
         _checkCornerDist.y = 0f;
 
         if (_checkCornerDist.magnitude < (_IsSprinting ? 1f : 0.35f))
@@ -399,7 +631,7 @@ public class NPC : Humanoid
             if (_cornersFromPath.Count > 0)
             {
                 _LastCornerFromPath = _cornersFromPath[0];
-                _directionInputFromPath = new Vector2(_cornersFromPath[0].x - transform.position.x, _cornersFromPath[0].z - transform.position.z).normalized;
+                _directionInputFromPath = new Vector2(_cornersFromPath[0].x - _Pos.x, _cornersFromPath[0].z - _Pos.z).normalized;
                 _cornersFromPath.RemoveAt(0);
             }
             else

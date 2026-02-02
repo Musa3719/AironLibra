@@ -101,7 +101,9 @@ public class CameraController : MonoBehaviour
             new Vector3(WorldHandler._Instance._Player._LookAtForCam.position.x, Mathf.Clamp(WorldHandler._Instance._Player._LookAtForCam.position.y, WorldHandler._Instance._SeaLevel, float.MaxValue), WorldHandler._Instance._Player._LookAtForCam.position.z);
         lerpSpeed = (WorldHandler._Instance._Player._LookAtForCam.position - transform.position).magnitude > _CameraDistance * 2.5f ? 7f : lerpSpeed;
         Vector3 realFollowOffset = new Vector3(_FollowOffset.x, _IsInCoolAngleMode ? 0.25f : _FollowOffset.y, _FollowOffset.z);
-        transform.position = Vector3.Lerp(transform.position, WorldHandler._Instance._Player._LookAtForCam.position + realFollowOffset * (_IsInCoolAngleMode ? _CameraDistance / 2f : _CameraDistance), Time.deltaTime * lerpSpeed);
+        Vector3 targetPos = WorldHandler._Instance._Player._LookAtForCam.position + realFollowOffset * (_IsInCoolAngleMode ? _CameraDistance / 2f : _CameraDistance);
+        transform.position = Vector3.Lerp(transform.position, targetPos, Time.deltaTime * lerpSpeed);
+
         if (_IsInCoolAngleMode)
         {
             float tempX = transform.localEulerAngles.x;
@@ -123,8 +125,8 @@ public class CameraController : MonoBehaviour
         while (true)
         {
             //Physics.Raycast(transform.position, (WorldHandler._Instance._Player.transform.position - transform.position).normalized, out RaycastHit hit, 300f, GameManager._Instance._SolidAndHumanMask);
-            Physics.Raycast(transform.position, (WorldHandler._Instance._Player.transform.position + Vector3.up * 0.7f - transform.position).normalized, out RaycastHit hit2, 300f, GameManager._Instance._SolidAndHumanMask);
-            Physics.Raycast(transform.position, (WorldHandler._Instance._Player.transform.position + Vector3.up * 1.4f - transform.position).normalized, out RaycastHit hit3, 300f, GameManager._Instance._SolidAndHumanMask);
+            Physics.Raycast(transform.position, (WorldHandler._Instance._Player.transform.position + Vector3.up * 0.7f - transform.position).normalized, out RaycastHit hit2, 300f, GameManager._Instance._SolidHumanMask);
+            Physics.Raycast(transform.position, (WorldHandler._Instance._Player.transform.position + Vector3.up * 1.4f - transform.position).normalized, out RaycastHit hit3, 300f, GameManager._Instance._SolidHumanMask);
             if (CheckRaycastHitForSolidObj(hit2) || CheckRaycastHitForSolidObj(hit3))
             {
                 _CameraDistance = Mathf.Clamp(_CameraDistance - 0.5f, 3f, _realCameraDistance);
@@ -136,8 +138,8 @@ public class CameraController : MonoBehaviour
                 Vector3 dir2 = (WorldHandler._Instance._Player.transform.position + Vector3.up * 0.7f - targetPos).normalized;
                 Vector3 dir3 = (WorldHandler._Instance._Player.transform.position + Vector3.up * 1.4f - targetPos).normalized;
                 //Physics.Raycast(targetPos, dir, out hit, 300f, GameManager._Instance._SolidAndHumanMask);
-                Physics.Raycast(targetPos, dir2, out hit2, 300f, GameManager._Instance._SolidAndHumanMask);
-                Physics.Raycast(targetPos, dir3, out hit3, 300f, GameManager._Instance._SolidAndHumanMask);
+                Physics.Raycast(targetPos, dir2, out hit2, 300f, GameManager._Instance._SolidHumanMask);
+                Physics.Raycast(targetPos, dir3, out hit3, 300f, GameManager._Instance._SolidHumanMask);
                 if (!(CheckRaycastHitForSolidObj(hit2) || CheckRaycastHitForSolidObj(hit3)))
                     _CameraDistance = Mathf.Clamp(_CameraDistance + 0.5f, 3f, _realCameraDistance);
             }

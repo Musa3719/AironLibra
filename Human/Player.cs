@@ -5,9 +5,7 @@ using UnityEngine;
 public class Player : Humanoid
 {
     public PlayerInputController _PlayerInputController { get; protected set; }
-
-    public Transform _LookAtForCam;
-
+    public Transform _LookAtForCam { get; private set; }
     #region Inputs
 
     public override Vector2 _DirectionInput => new Vector2(_HorizontalInput, _VerticalInput).normalized;
@@ -28,7 +26,7 @@ public class Player : Humanoid
     public Coroutine _SelectAttackCoroutine;
     public Coroutine _KickCoroutine;
     public Coroutine _DodgeCoroutine;
-    public float _LastJumpedTime { get; set; }
+    public double _LastJumpedTime { get; set; }
     public Vector3 _LastJumpedPosition { get; set; }
 
     #endregion
@@ -37,6 +35,7 @@ public class Player : Humanoid
     protected override void Awake()
     {
         //_IsMale = true;/////////
+        _LookAtForCam = transform.Find("LookAtForCam");
         _Rigidbody = GetComponent<Rigidbody>();
         //_MainCollider = transform.Find("MainCollider").GetComponent<CapsuleCollider>();
         _MainCollider = transform.Find("char").Find("MainCollider").GetComponent<CapsuleCollider>();
@@ -48,16 +47,21 @@ public class Player : Humanoid
     protected override void Start()
     {
         base.Start();
-        DisableHumanData();
-        EnableHumanData();
         _VerticalInput = -1f;
     }
     protected override void Update()
     {
         if (GameManager._Instance._IsGameStopped) return;
         base.Update();
-        _PlayerInputController.ArrangeInput(_LocomotionSystem);
+        _PlayerInputController.ArrangeInput();
         GameManager._Instance.UpdateInGameUI(_Stamina / _MaxStamina);
+    }
+    private void FixedUpdate()
+    {
+        //if (_Rigidbody.isKinematic) return;
+
+        if (_UmaDynamicAvatar != null && _MovementState != null)
+            _MovementState.FixedUpdate();
     }
 }
 
@@ -67,9 +71,9 @@ public class PlayerInputController
     private float _quitCombatModeCounter;
     private bool _attackHappenedForInput;
     private float _attackReadyTime;
-    private float _lastAttackReadyTime;
+    private double _lastAttackReadyTime;
     private float _runInputCounter;
-    private float _lastTimeRunInputPressed;
+    private double _lastTimeRunInputPressed;
 
     public PlayerInputController(Player player)
     {
@@ -85,42 +89,63 @@ public class PlayerInputController
         else
             _player._HeavyAttackInput = true;
     }
-    public void ArrangeInput(LocomotionSystem locomotionSystem)
+    public void ArrangeInput()
     {
-        if (M_Input.GetButtonDown("Fire1") && _attackHappenedForInput)
+        if (_player._HandState is RangedWeaponHandState)
         {
-            _lastAttackReadyTime = Time.time;
-            _attackReadyTime = 0f;
-            _attackHappenedForInput = false;
-            GameManager._Instance.CoroutineCall(ref _player._AttackReadyCoroutine, AttackReadyBufferCoroutine(), _player);
+            _player._AimPosition = GameManager._Instance._RangedAimMesh.position;
         }
-        else if (M_Input.GetButton("Fire1") && !_attackHappenedForInput)
+        else
         {
-            _attackReadyTime += Time.deltaTime;
-            if (_attackReadyTime > 1f)
+            _player._AimPosition = _player._LookAtForCam.position;
+        }
+
+
+        if (_player._HandState is MeleeWeaponHandState)
+        {
+            if (M_Input.GetButtonDown("Fire1") && _attackHappenedForInput)
+            {
+                _lastAttackReadyTime = Time.timeAsDouble;
+                _attackReadyTime = 0f;
+                _attackHappenedForInput = false;
+                GameManager._Instance.CoroutineCall(ref _player._AttackReadyCoroutine, AttackReadyBufferCoroutine(), _player);
+            }
+            else if (M_Input.GetButton("Fire1") && !_attackHappenedForInput)
+            {
+                _attackReadyTime += Time.deltaTime;
+                if (_attackReadyTime > 1f)
+                {
+                    _attackHappenedForInput = true;
+                    GameManager._Instance.CoroutineCall(ref _player._SelectAttackCoroutine, SelectAttackCoroutine(), _player);
+                }
+            }
+            else if (!_attackHappenedForInput)
             {
                 _attackHappenedForInput = true;
                 GameManager._Instance.CoroutineCall(ref _player._SelectAttackCoroutine, SelectAttackCoroutine(), _player);
             }
+
+            if (_player._AttackReadyBuffer && HandStateMethods.IsAttackPossible(_player))
+            {
+                GameManager._Instance.BufferActivated(ref WorldHandler._Instance._Player._AttackReadyBuffer, WorldHandler._Instance._Player, ref WorldHandler._Instance._Player._AttackReadyCoroutine);
+                HandStateMethods.ArrangeIsAttackingFromLeftHand(_player);
+                HandStateMethods.ReadyAttackAnimation(_player, HandStateMethods.GetCurrentWeaponType(_player, _player._IsAttackingFromLeftHandWeapon));
+            }
+            else if (_player._SelectAttackBuffer && HandStateMethods.IsAttackPossible(_player) && _player._IsInAttackReady && _attackReadyTime <= (Time.timeAsDouble - _lastAttackReadyTime))
+            {
+                GameManager._Instance.BufferActivated(ref WorldHandler._Instance._Player._SelectAttackBuffer, WorldHandler._Instance._Player, ref WorldHandler._Instance._Player._SelectAttackCoroutine);
+                _player._AttackReadyTime = _attackReadyTime;
+                SelectHeavyOrLightAttack();
+            }
         }
-        else if (!_attackHappenedForInput)
+        else if (_player._HandState is RangedWeaponHandState)
         {
-            _attackHappenedForInput = true;
-            GameManager._Instance.CoroutineCall(ref _player._SelectAttackCoroutine, SelectAttackCoroutine(), _player);
+            if (M_Input.GetButtonDown("Fire1") && _player._IsInRangedAim)
+            {
+                _player._LightAttackInput = true;
+            }
         }
 
-        if (_player._AttackReadyBuffer && HandStateMethods.IsAttackPossible(_player))
-        {
-            GameManager._Instance.BufferActivated(ref WorldHandler._Instance._Player._AttackReadyBuffer, WorldHandler._Instance._Player, ref WorldHandler._Instance._Player._AttackReadyCoroutine);
-            HandStateMethods.ArrangeIsAttackingFromLeftHand(_player);
-            HandStateMethods.ReadyAttackAnimation(_player, HandStateMethods.GetCurrentWeaponType(_player, _player._IsAttackingFromLeftHandWeapon));
-        }
-        else if (_player._SelectAttackBuffer && HandStateMethods.IsAttackPossible(_player) && _player._IsInAttackReady && _attackReadyTime <= (Time.time - _lastAttackReadyTime))
-        {
-            GameManager._Instance.BufferActivated(ref WorldHandler._Instance._Player._SelectAttackBuffer, WorldHandler._Instance._Player, ref WorldHandler._Instance._Player._SelectAttackCoroutine);
-            _player._AttackReadyTime = _attackReadyTime;
-            SelectHeavyOrLightAttack();
-        }
 
         if (M_Input.GetButtonDown("Interact"))
         {
@@ -147,7 +172,11 @@ public class PlayerInputController
                 if (_quitCombatModeCounter > 0.4f)
                 {
                     if (_player._IsInCombatMode)
+                    {
                         _player.DisableCombatMode();
+                        GameManager._Instance._RangedAimMesh.gameObject.SetActive(false);
+                        GamepadMouse._Instance._PosForRangedAim = Vector2.zero;
+                    }
                     else
                         _player.ActivateCombatMode();
                     _quitCombatModeCounter = -1f;
@@ -161,9 +190,9 @@ public class PlayerInputController
 
         if (M_Input.GetButtonDown("Run") && !_player._IsInCombatMode)
         {
-            if (_lastTimeRunInputPressed + 0.4f > Time.time)
+            if (_lastTimeRunInputPressed + 0.4 > Time.timeAsDouble)
                 _player._IsInFastWalkMode = !_player._IsInFastWalkMode;
-            _lastTimeRunInputPressed = Time.time;
+            _lastTimeRunInputPressed = Time.timeAsDouble;
         }
 
         if (M_Input.GetButton("Run"))
@@ -182,6 +211,8 @@ public class PlayerInputController
         _player._KickInput = _player._KickBuffer;
         _player._DodgeInput = _player._DodgeBuffer;
         _player._BlockInput = M_Input.GetButton("Fire2");
+        _player._AimInput = M_Input.GetButton("Fire2");
+        _player._ReloadInput = M_Input.GetButtonDown("Reload");
         _player._InteractInput = M_Input.GetButtonDown("Interact");
         _player._CameraAngleInput = M_Input.GetButton("CameraAngle");
 

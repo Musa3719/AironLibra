@@ -42,12 +42,12 @@ public class HealthSystem
     public float _LegsWoundAmount { get => _legsWoundAmount; set { _legsWoundAmount = Mathf.Clamp(value, 0f, 100f); } }
     private float _legsWoundAmount;
 
-    private float _lastHitTime;
-    public Vector3 _LastHitForce { get { if (_lastHitTime - Time.time > 0.2f) return Vector3.zero; return _lastHitForce; } }
+    private double _lastHitTime;
+    public Vector3 _LastHitForce { get { if (_lastHitTime - Time.timeAsDouble > 0.2f) return Vector3.zero; return _lastHitForce; } }
     private Vector3 _lastHitForce;
-    public string _LastHitBoneName { get { if (_lastHitTime - Time.time > 0.2f) return ""; return _lastHitBoneName; } }
+    public string _LastHitBoneName { get { if (_lastHitTime - Time.timeAsDouble > 0.2f) return ""; return _lastHitBoneName; } }
     private string _lastHitBoneName;
-    public Vector3 _LastHitDir { get { if (_lastHitTime - Time.time > 0.2f) return Vector3.zero; return _lastHitDir; } }
+    public Vector3 _LastHitDir { get { if (_lastHitTime - Time.timeAsDouble > 0.2f) return Vector3.zero; return _lastHitDir; } }
     private Vector3 _lastHitDir;
 
     private float _updateCounter;
@@ -112,7 +112,7 @@ public class HealthSystem
     {
         _BleedingOverTime += bleedingDamage;
         _BloodLevel -= bleedingDamage * 20f;
-        _lastHitTime = Time.time;
+        _lastHitTime = Time.timeAsDouble;
         _lastHitDir = damage._Direction;
         Transform bone;
 
@@ -138,8 +138,13 @@ public class HealthSystem
                 _LegsWoundAmount += damage._Amount;
                 Debug.Log("legs " + _LegsWoundAmount);
                 break;
+            case DamagePart.Feet:
+                _lastHitBoneName = "Hips";
+                _legsWoundAmount += damage._Amount;
+                Debug.Log("legs " + _LegsWoundAmount);
+                break;
             default:
-                Debug.LogError("damage part not found!");
+                Debug.LogError("damage part not found: " + damage._DamagePart);
                 break;
         }
 
@@ -164,7 +169,7 @@ public class HealthSystem
         }
         else
         {
-            Debug.LogError("Bone Name not Found!");
+            Debug.LogError("Bone Name not Found: " + str);
             return null;
         }
     }

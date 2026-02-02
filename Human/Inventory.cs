@@ -21,7 +21,7 @@ public class Inventory
     public float _CarryCapacityUse { get; set; }
 
     public string _Name => _CanEquip ? _InventoryHolder._Human._Name : (_IsBackCarry ? _BackCarryToItem._ItemDefinition._Name : _InventoryHolder.gameObject.name);
-    public bool _IsHuman => _InventoryHolder?.gameObject.layer == LayerMask.NameToLayer("Human");
+    public bool _IsHuman => _InventoryHolder == null ? false : GameManager._Instance._HumanMask.Contains(_InventoryHolder.gameObject.layer);
     public bool _IsBackCarry => _InventoryHolder == null;
     public bool _IsPublic { get { if ((_InventoryHolder?._Human != null && _InventoryHolder._Human._HealthSystem._IsUnconscious) || (_BackCarryToEquippedHuman != null && _BackCarryToEquippedHuman._HealthSystem._IsUnconscious)) return true; return _isPublic; } }
     private bool _isPublic;
@@ -46,6 +46,10 @@ public class Inventory
         if (_IsBackCarry) return;
         new ArmorItem(ChestArmor_1._Instance).TakenTo(this);
         new WeaponItem(LongSword_1._Instance).TakenTo(this);
+        new WeaponItem(Crossbow._Instance).TakenTo(this);
+        new WeaponItem(SurvivalBow._Instance).TakenTo(this);
+        new WeaponItem(HuntingBow._Instance).TakenTo(this);
+        new WeaponItem(CompositeBow._Instance).TakenTo(this);
         if (_InventoryHolder?._Human != null)
             new CarryItem(Backpack._Instance).Equip(this);
 
@@ -53,6 +57,16 @@ public class Inventory
         for (int i = 0; i < random; i++)
         {
             new Item(Apple._Instance).TakenTo(this);
+        }
+        random = Random.Range(1, 15);
+        for (int i = 0; i < random; i++)
+        {
+            new Item(Arrow._Instance).TakenTo(this);
+        }
+        random = Random.Range(1, 15);
+        for (int i = 0; i < random; i++)
+        {
+            new Item(BoltArrow._Instance).TakenTo(this);
         }
         random = Random.Range(1, 15);
         for (int i = 0; i < random; i++)
@@ -119,8 +133,8 @@ public class Inventory
             sum += _InventoryHolder._Human._HeadGearItemRef.GetRealCapacity();
         if (_InventoryHolder._Human._GlovesItemRef != null)
             sum += _InventoryHolder._Human._GlovesItemRef.GetRealCapacity();
-        //if (_InventoryHolder._Human._BackCarryItemRef != null)
-        //sum += _InventoryHolder._Human._BackCarryItemRef.GetRealCapacity();
+        if (_InventoryHolder._Human._BackCarryItemRef != null)
+            sum += _InventoryHolder._Human._BackCarryItemRef.GetRealCapacity();
         if (_InventoryHolder._Human._ClothingItemRef != null)
             sum += _InventoryHolder._Human._ClothingItemRef.GetRealCapacity();
         if (_InventoryHolder._Human._ChestArmorItemRef != null)
@@ -156,16 +170,18 @@ public class Inventory
         if (_IsHuman && _InventoryHolder.GetComponent<Humanoid>()._BackCarryItemRef != null && (_InventoryHolder.GetComponent<Humanoid>()._BackCarryItemRef as CarryItem)._Inventory.CanTakeThisItemCommon(item)) return true;
         return false;
     }
-    public bool CanEquipThisItem(Item item)
+    public bool CanEquipThisItem(Item item, bool isToLeftHand)
     {
         if (!(item is ICanBeEquipped)) return false;
         if (!_CanEquip) return false;
         if (!CanTakeBigItem(item, true)) return false;
-        if (!item.CheckViableForHandEquip(this)) return false;
+        if (!item.CheckViableForHandEquip(this, isToLeftHand)) return false;
         return true;
     }
     public bool CanTakeThisItemCommon(Item item)
     {
+        if (_IsBackCarry && item is CarryItem) return false;
+
         if (!IsFull())
         {
             if (item._ItemDefinition._IsBig)
@@ -255,7 +271,7 @@ public abstract class ItemDefinition
 {
     public string _Name;
     public float _BaseWeight;
-    public bool _IsBig;//two handed for weapons, all wearables, slow and two handed carry for others 
+    public bool _IsBig;
     public bool _CanBeEquipped;
 
     public string _ItemDescription;
@@ -272,11 +288,11 @@ public abstract class ItemDefinition
 public class Item
 {
     public ItemDefinition _ItemDefinition;
+    public ItemHandleData _ItemHandleData;
 
     public Inventory _AttachedInventoryCommon => _IsEquipped ? _EquippedHumanoid._Inventory : _AttachedInventory;
     public Inventory _AttachedInventory;
     public Humanoid _EquippedHumanoid;
-    public ItemHandleData _ItemHandleData;
 
     public int _Count;
     public bool _IsEquipped => _EquippedHumanoid != null;
@@ -295,7 +311,9 @@ public class Item
         Item copy = new Item(_ItemDefinition);
         copy._AttachedInventory = _AttachedInventory;
         copy._EquippedHumanoid = _EquippedHumanoid;
-        copy._ItemHandleData = _ItemHandleData;
+        copy._ItemHandleData = new ItemHandleData();
+        copy._ItemHandleData._AssetRef = _ItemHandleData._AssetRef;
+        copy._ItemHandleData._ItemRef = copy;
         copy._Count = _Count;
         return copy;
     }
@@ -390,21 +408,24 @@ public class Item
                 break;
         }
     }
-    public bool CheckViableForHandEquip(Inventory targetInv)
+    public bool CheckViableForHandEquip(Inventory targetInv, bool isTargetLeft)
     {
         int index = (this as ICanBeEquipped)._SlotIndex;
-        if (index == 7)
+        if (index != 7 && index != 8) return true;
+        if (!(_ItemDefinition is IWeapon equippedForDefinition)) return true;
+
+        if (isTargetLeft)
         {
-            if (_ItemDefinition._IsBig) return false;
-            if (targetInv._InventoryHolder._Human._RightHandEquippedItemRef != null && targetInv._InventoryHolder._Human._RightHandEquippedItemRef._ItemDefinition._IsBig) return false;
+            if (equippedForDefinition._IsTwoHandedWeapon) return false;
+            if (targetInv._InventoryHolder._Human._RightHandEquippedItemRef != null && (targetInv._InventoryHolder._Human._RightHandEquippedItemRef._ItemDefinition as IWeapon)._IsTwoHandedWeapon) return false;
             return true;
         }
-        else if (index == 8)
+        else
         {
-            if (_ItemDefinition._IsBig && targetInv._InventoryHolder._Human._LeftHandEquippedItemRef != null) return false;
+            if (equippedForDefinition._IsTwoHandedWeapon && targetInv._InventoryHolder._Human._LeftHandEquippedItemRef != null)
+                return false;
             return true;
         }
-        return true;
     }
 
     private void SpawnItemHandle(Transform parentTransform, Vector3 pos, Vector3 angles, ICanBeEquipped equippableItem)
@@ -468,7 +489,7 @@ public class Item
 
     public void Equip(Inventory targetInv, bool isToLeftHand = false)
     {
-        if (!targetInv.CanEquipThisItem(this)) return;
+        if (!targetInv.CanEquipThisItem(this, isToLeftHand)) return;
 
         Humanoid oldHuman = null;
         if (_EquippedHumanoid != null)
@@ -484,8 +505,6 @@ public class Item
         {
             if (isToLeftHand)
                 weaponItem._SlotIndexDynamic = 7;
-            else if (_EquippedHumanoid._RightHandEquippedItemRef != null && _EquippedHumanoid._LeftHandEquippedItemRef == null)
-                weaponItem._SlotIndexDynamic = 7;
             else
                 weaponItem._SlotIndexDynamic = 8;
         }
@@ -494,17 +513,20 @@ public class Item
         ArrangeExistingEquipSlot(targetInv, slotIndex);
         SetHumanoidEquipSlot(slotIndex, true);
 
-        if(this is ClothingItem || this is ArmorItem)
+        if (this is ClothingItem || this is ArmorItem)
         {
-            _EquippedHumanoid.WearWardrobe(_EquippedHumanoid.GetRecipeFromItemName(_ItemDefinition._Name));
+            if (_EquippedHumanoid._UmaDynamicAvatar != null && _EquippedHumanoid._UmaDynamicAvatar.BuildCharacterEnabled)
+                _EquippedHumanoid.WearWardrobe(_EquippedHumanoid.GetRecipeFromItemName(_ItemDefinition._Name));
         }
         else if (slotIndex == 7 || slotIndex == 8)
         {
-            if (_EquippedHumanoid._UmaDynamicAvatar != null)
+            if (_EquippedHumanoid._UmaDynamicAvatar != null && _EquippedHumanoid._UmaDynamicAvatar.BuildCharacterEnabled)
                 SpawnHandItem();
         }
-        else if (slotIndex == 2 && _EquippedHumanoid._UmaDynamicAvatar != null)
+        else if (slotIndex == 2 && _EquippedHumanoid._UmaDynamicAvatar != null && _EquippedHumanoid._UmaDynamicAvatar.BuildCharacterEnabled)
             SpawnBackCarryItem();
+
+        SetCurrentCarryCapacityUse(_EquippedHumanoid._Inventory);
 
         if (_EquippedHumanoid._Inventory.IsInventoryVisibleInScreen() || (oldHuman != null && oldHuman._Inventory.IsInventoryVisibleInScreen()))
             GameManager._Instance.UpdateInventoryUIBuffer();
@@ -532,10 +554,8 @@ public class Item
         else if (this is CarryItem carryItem)
             DespawnBackCarryItem();
 
+        SetCurrentCarryCapacityUse(_EquippedHumanoid._Inventory);
         _EquippedHumanoid = null;
-
-        //equipped logic
-        //equipped graphic
 
         if (isVisible)
             GameManager._Instance.UpdateInventoryUIBuffer();
@@ -573,7 +593,7 @@ public class Item
         if (_AttachedInventory.IsInventoryVisibleInScreen() || (oldInv != null && oldInv.IsInventoryVisibleInScreen()))
             GameManager._Instance.UpdateInventoryUIBuffer();
     }
-    private void SetCurrentCarryCapacityUse(Inventory inventory)
+    public void SetCurrentCarryCapacityUse(Inventory inventory)
     {
         if (inventory._BackCarryToEquippedHuman != null)
             inventory._BackCarryToEquippedHuman._Inventory._CarryCapacityUse = inventory._BackCarryToEquippedHuman._Inventory.CurrentCarryCapacityUseCommon();
@@ -614,7 +634,13 @@ public class Item
 }
 
 public interface ICanBeEquipped { public int _SlotIndex { get; } public float _Durability { get; set; } public float _DurabilityMax { get; set; } public void DurabilityChanged(Item itemInstance); public AsyncOperationHandle<GameObject>? _SpawnedHandle { get; set; } }
-public interface ICanBeEquippedForDefinition { public int _SlotIndex { get; } public float _Value { get; } public DamageType _DamageType { get; } public Vector3 _PosOffset { get; } public Vector3 _AnglesOffset { get; } public Vector3 _DefPosOffset { get; } public Vector3 _DefAnglesOffset { get; } }
+public interface ICanLoadItem { public Item _LoadedItem { get; set; } }
+public interface ICanBeEquippedForDefinition { public int _SlotIndex { get; } public Vector3 _PosOffset { get; } public Vector3 _AnglesOffset { get; } public Vector3 _DefPosOffset { get; } public Vector3 _DefAnglesOffset { get; } }
+public interface IWeapon : ICanBeEquippedForDefinition { public bool _IsTwoHandedWeapon { get; } public DamageType _DamageType { get; } public float _BaseDamage { get; } public float _BaseArmorPen { get; } public float _BaseSpeed { get; } }
+public interface IRangedWeapon : IWeapon { public string _AnimName { get; } public bool _IsCrossbow { get; } }
+public interface IMeleeWeapon : IWeapon { }
+public interface IArmor : ICanBeEquippedForDefinition { public float _ProtectionValue { get; } }
+public interface ICarry : ICanBeEquippedForDefinition { public float _CarryCapacity { get; } }
 public interface ICanBeConsumed { public float _ConsumeValue { get; } public abstract void Consume(Item item); }
 public class CarryItem : Item, ICanBeEquipped
 {
@@ -628,6 +654,7 @@ public class CarryItem : Item, ICanBeEquipped
         _inventory = new Inventory(null, backCarryToItem: this);
     }
     public int _SlotIndex => (_ItemDefinition as ICanBeEquippedForDefinition)._SlotIndex;
+    public float _CarryCapacity => (_ItemDefinition as ICarry)._CarryCapacity;
     public float _Durability { get { return _durability; } set { _durability = value; } }
     private float _durability;
     public float _DurabilityMax { get { return _durabilityMax; } set { _durabilityMax = value; } }
@@ -666,8 +693,9 @@ public class CarryItem : Item, ICanBeEquipped
         }
     }
 }
-public class WeaponItem : Item, ICanBeEquipped
+public class WeaponItem : Item, ICanBeEquipped, ICanLoadItem
 {
+    public Item _LoadedItem { get; set; }
     public WeaponItem(ItemDefinition def) : base(def)
     {
         _Durability = 100f;
@@ -746,12 +774,13 @@ public class ClothingItem : Item, ICanBeEquipped
 
     public float _ColdProtectionValue;
 }
-public class Backpack : ItemDefinition, ICanBeEquippedForDefinition
+public class Backpack : ItemDefinition, ICarry
 {
     public static Backpack _Instance { get { if (_instance == null) _instance = new Backpack(); return _instance; } }
     private static Backpack _instance;
     public int _SlotIndex => 2;
-    public float _Value => 300f;
+    public bool _IsTwoHandedWeapon => false;
+    public float _CarryCapacity => 300f;
     public DamageType _DamageType => DamageType.Crush;
     public Vector3 _PosOffset => new Vector3(0f, 0f, 0f);
     public Vector3 _AnglesOffset => new Vector3(0f, 0f, 0f);
@@ -759,19 +788,22 @@ public class Backpack : ItemDefinition, ICanBeEquippedForDefinition
     public Vector3 _DefAnglesOffset => new Vector3(0f, 0f, 0f);
 
 
-    public Backpack() : base("Backpack", 3f, true, true) { _ItemDescription = Localization._Instance._UI[77] + _Value; }
+    public Backpack() : base("Backpack", 3f, true, true) { _ItemDescription = Localization._Instance._UI[77] + _CarryCapacity; }
 }
 
 #region Items
-public class Default_MeleeWeapon : ItemDefinition, ICanBeEquippedForDefinition
+public class Default_MeleeWeapon : ItemDefinition, IMeleeWeapon
 {
     public static Default_MeleeWeapon _Instance { get { if (_instance == null) _instance = new Default_MeleeWeapon(); return _instance; } }
     private static Default_MeleeWeapon _instance;
     public int _SlotIndex => 8;
-    public float _Value => _damageOverride;
+    public bool _IsTwoHandedWeapon => false;
+    public float _BaseDamage => _damageOverride;
+    public float _BaseArmorPen => 0f;
+    public float _BaseSpeed => 1f;
+
     private float _damageOverride;
 
-    public float _WaitTimeForNextAttackMultiplier => 1f;
     public DamageType _DamageType => DamageType.Crush;
     public Vector3 _PosOffset => new Vector3(0f, 0f, 0f);
     public Vector3 _AnglesOffset => new Vector3(0f, 0f, 0f);
@@ -783,34 +815,118 @@ public class Default_MeleeWeapon : ItemDefinition, ICanBeEquippedForDefinition
 
     public void SetDamageOverride(float damageOverride) => _damageOverride = damageOverride;
 }
-public class LongSword_1 : ItemDefinition, ICanBeEquippedForDefinition
+public class LongSword_1 : ItemDefinition, IMeleeWeapon
 {
     public static LongSword_1 _Instance { get { if (_instance == null) _instance = new LongSword_1(); return _instance; } }
     private static LongSword_1 _instance;
     public int _SlotIndex => 8;//also 7
-    public float _Value => 40f;
+    public bool _IsTwoHandedWeapon => false;
+    public float _BaseDamage => 40f;
+    public float _BaseArmorPen => 15f;
+    public float _BaseSpeed => 1.2f;
     public DamageType _DamageType => DamageType.Cut;
     public Vector3 _PosOffset => new Vector3(0.027f, -0.03f, 0.017f);
     public Vector3 _AnglesOffset => new Vector3(12.995f, -88.867f, 7.152f);
-    public Vector3 _DefPosOffset => new Vector3(-0.064f, 0.014f, 0.017f);
-    public Vector3 _DefAnglesOffset => new Vector3(2.842f, 14.831f, 258.479f);
+    public Vector3 _DefPosOffset => new Vector3(-0.085f, -0.01f, 0.016f);
+    public Vector3 _DefAnglesOffset => new Vector3(-0.936f, -9.928f, -94.704f);
 
 
-    public LongSword_1() : base("LongSword_1", 7.5f, true, true) { _ItemDescription = Localization._Instance._UI[76] + _Value; }
+    public LongSword_1() : base("LongSword_1", 7.5f, true, true) { _ItemDescription = Localization._Instance._UI[76] + Localization._Instance._UI[83] + _BaseDamage + Localization._Instance._UI[85] + _BaseArmorPen; }
 }
-public class ChestArmor_1 : ItemDefinition, ICanBeEquippedForDefinition
+public class Crossbow : ItemDefinition, IRangedWeapon
+{
+    public static Crossbow _Instance { get { if (_instance == null) _instance = new Crossbow(); return _instance; } }
+    private static Crossbow _instance;
+    public int _SlotIndex => 8;
+    public bool _IsTwoHandedWeapon => true;
+    public float _BaseDamage => 55f;
+    public float _BaseArmorPen => 45f;
+    public float _BaseSpeed => 0.7f;
+    public DamageType _DamageType => DamageType.Pierce;
+    public Vector3 _PosOffset => new Vector3(-0.015f, 0.022f, 0.016f);
+    public Vector3 _AnglesOffset => new Vector3(183.483f, 79.567f, 179.664f);
+    public Vector3 _DefPosOffset => new Vector3(0.01f, 0.013f, 0.019f);
+    public Vector3 _DefAnglesOffset => new Vector3(6.842f, 82.137f, 178.847f);
+    public string _AnimName => "Crossbow Trigger";
+    public bool _IsCrossbow => true;
+    public Item _LoadedItem { get; set; }
+
+    public Crossbow() : base("Crossbow", 10f, true, true) { _ItemDescription = Localization._Instance._UI[78] + Localization._Instance._UI[83] + _BaseDamage + Localization._Instance._UI[85] + _BaseArmorPen; }
+}
+public class SurvivalBow : ItemDefinition, IRangedWeapon
+{
+    public static SurvivalBow _Instance { get { if (_instance == null) _instance = new SurvivalBow(); return _instance; } }
+    private static SurvivalBow _instance;
+    public int _SlotIndex => 8;
+    public bool _IsTwoHandedWeapon => true;
+    public float _BaseDamage => 32f;
+    public float _BaseArmorPen => 10f;
+    public float _BaseSpeed => 0.8f;
+    public DamageType _DamageType => DamageType.Pierce;
+    public bool _IsCrossbow => false;
+    public string _AnimName => "Bow Trigger";
+    public Vector3 _PosOffset => new Vector3(0.06f, 0.029f, 0.008f);
+    public Vector3 _AnglesOffset => new Vector3(14.964f, -92.576f, 4.083f);
+    public Vector3 _DefPosOffset => new Vector3(-0.152f, 0.08f, -0.118f);
+    public Vector3 _DefAnglesOffset => new Vector3(90f, 0f, -89.582f);
+    public Item _LoadedItem { get; set; }
+
+    public SurvivalBow() : base("SurvivalBow", 8f, true, true) { _ItemDescription = Localization._Instance._UI[80] + Localization._Instance._UI[83] + _BaseDamage + Localization._Instance._UI[85] + _BaseArmorPen; }
+}
+public class HuntingBow : ItemDefinition, IRangedWeapon
+{
+    public static HuntingBow _Instance { get { if (_instance == null) _instance = new HuntingBow(); return _instance; } }
+    private static HuntingBow _instance;
+    public int _SlotIndex => 8;
+    public bool _IsTwoHandedWeapon => true;
+    public float _BaseDamage => 50f;
+    public float _BaseArmorPen => 20f;
+    public float _BaseSpeed => 1f;
+    public bool _IsCrossbow => false;
+    public string _AnimName => "Bow Trigger";
+    public DamageType _DamageType => DamageType.Pierce;
+    public Vector3 _PosOffset => new Vector3(0.059f, 0.002f, 0.014f);
+    public Vector3 _AnglesOffset => new Vector3(12.565f, -92.751f, 2.941f);
+    public Vector3 _DefPosOffset => new Vector3(-0.153f, 0.09f, -0.114f);
+    public Vector3 _DefAnglesOffset => new Vector3(89.886f, 0f, -90.639f);
+    public Item _LoadedItem { get; set; }
+
+    public HuntingBow() : base("HuntingBow", 6.5f, true, true) { _ItemDescription = Localization._Instance._UI[81] + Localization._Instance._UI[83] + _BaseDamage + Localization._Instance._UI[85] + _BaseArmorPen; }
+}
+public class CompositeBow : ItemDefinition, IRangedWeapon
+{
+    public static CompositeBow _Instance { get { if (_instance == null) _instance = new CompositeBow(); return _instance; } }
+    private static CompositeBow _instance;
+    public int _SlotIndex => 8;
+    public bool _IsTwoHandedWeapon => true;
+    public float _BaseDamage => 45f;
+    public float _BaseArmorPen => 40f;
+    public float _BaseSpeed => 1.25f;
+    public bool _IsCrossbow => false;
+    public string _AnimName => "Bow Trigger";
+    public DamageType _DamageType => DamageType.Pierce;
+    public Vector3 _PosOffset => new Vector3(0.014f, 0.0084f, 0.0136f);
+    public Vector3 _AnglesOffset => new Vector3(165.036f, 87.424f, -175.917f);
+    public Vector3 _DefPosOffset => new Vector3(-0.26f, 0.098f, -0.126f);
+    public Vector3 _DefAnglesOffset => new Vector3(90.16199f, 76.563f, -14.73901f);
+    public Item _LoadedItem { get; set; }
+
+    public CompositeBow() : base("CompositeBow", 5f, true, true) { _ItemDescription = Localization._Instance._UI[82] + Localization._Instance._UI[83] + _BaseDamage + Localization._Instance._UI[85] + _BaseArmorPen; }
+}
+public class ChestArmor_1 : ItemDefinition, IArmor
 {
     public static ChestArmor_1 _Instance { get { if (_instance == null) _instance = new ChestArmor_1(); return _instance; } }
     private static ChestArmor_1 _instance;
     public int _SlotIndex => 4;
-    public float _Value => 0.6f;
+    public bool _IsTwoHandedWeapon => false;
+    public float _ProtectionValue => 55f;
     public DamageType _DamageType => DamageType.Crush;
     public Vector3 _PosOffset => new Vector3(0f, 0f, 0f);
     public Vector3 _AnglesOffset => new Vector3(0f, 0f, 0f);
     public Vector3 _DefPosOffset => new Vector3(0f, 0f, 0f);
     public Vector3 _DefAnglesOffset => new Vector3(0f, 0f, 0f);
 
-    public ChestArmor_1() : base("ChestArmor_1", 35f, true, true) { _ItemDescription = Localization._Instance._UI[75] + _Value; }
+    public ChestArmor_1() : base("ChestArmor_1", 35f, true, true) { _ItemDescription = Localization._Instance._UI[75] + Localization._Instance._UI[84] + _ProtectionValue; }
 }
 
 public class Apple : ItemDefinition, ICanBeConsumed
@@ -818,16 +934,29 @@ public class Apple : ItemDefinition, ICanBeConsumed
     public static Apple _Instance { get { if (_instance == null) _instance = new Apple(); return _instance; } }
     private static Apple _instance;
     public float _ConsumeValue => 5f;
-    public Apple() : base("Apple", 0.2f, false, false) { _ItemDescription = Localization._Instance._UI[69] + _ConsumeValue + Localization._Instance._UI[70]; }
+    public Apple() : base("Apple", 0.2f, false, false) { _ItemDescription = Localization._Instance._UI[87] + _ConsumeValue + Localization._Instance._UI[88]; }
 
     public void Consume(Item item) { bool isVisible = item._AttachedInventory.IsInventoryVisibleInScreen(); item._Count--; if (item._Count == 0) item.DropFrom(false); if (isVisible) GameManager._Instance.UpdateInventoryUIBuffer(); }
 }
+public class Arrow : ItemDefinition
+{
+    public static Arrow _Instance { get { if (_instance == null) _instance = new Arrow(); return _instance; } }
+    private static Arrow _instance;
+    public Arrow() : base("Arrow", 0.3f, false, false) { _ItemDescription = Localization._Instance._UI[70]; }
+}
+public class BoltArrow : ItemDefinition
+{
+    public static BoltArrow _Instance { get { if (_instance == null) _instance = new BoltArrow(); return _instance; } }
+    private static BoltArrow _instance;
+    public BoltArrow() : base("BoltArrow", 0.2f, false, false) { _ItemDescription = Localization._Instance._UI[79]; }
+}
+
 public class Apple2 : ItemDefinition, ICanBeConsumed
 {
     public static Apple _Instance { get { if (_instance == null) _instance = new Apple(); return _instance; } }
     private static Apple _instance;
     public float _ConsumeValue => 5f;
-    public Apple2() : base("Apple2", 0.2f, false, false) { _ItemDescription = Localization._Instance._UI[69] + _ConsumeValue + Localization._Instance._UI[70]; }
+    public Apple2() : base("Apple2", 0.2f, false, false) { _ItemDescription = Localization._Instance._UI[87] + _ConsumeValue + Localization._Instance._UI[88]; }
 
     public void Consume(Item item) { item._Count--; if (item._Count == 0) item.DropFrom(false); if (item._AttachedInventory.IsInventoryVisibleInScreen()) GameManager._Instance.UpdateInventoryUIBuffer(); }
 }
@@ -836,7 +965,7 @@ public class Apple3 : ItemDefinition, ICanBeConsumed
     public static Apple _Instance { get { if (_instance == null) _instance = new Apple(); return _instance; } }
     private static Apple _instance;
     public float _ConsumeValue => 5f;
-    public Apple3() : base("Apple3", 0.2f, false, false) { _ItemDescription = Localization._Instance._UI[69] + _ConsumeValue + Localization._Instance._UI[70]; }
+    public Apple3() : base("Apple3", 0.2f, false, false) { _ItemDescription = Localization._Instance._UI[87] + _ConsumeValue + Localization._Instance._UI[88]; }
 
     public void Consume(Item item) { item._Count--; if (item._Count == 0) item.DropFrom(false); if (item._AttachedInventory.IsInventoryVisibleInScreen()) GameManager._Instance.UpdateInventoryUIBuffer(); }
 }
@@ -845,7 +974,7 @@ public class Apple4 : ItemDefinition, ICanBeConsumed
     public static Apple _Instance { get { if (_instance == null) _instance = new Apple(); return _instance; } }
     private static Apple _instance;
     public float _ConsumeValue => 5f;
-    public Apple4() : base("Apple4", 0.2f, false, false) { _ItemDescription = Localization._Instance._UI[69] + _ConsumeValue + Localization._Instance._UI[70]; }
+    public Apple4() : base("Apple4", 0.2f, false, false) { _ItemDescription = Localization._Instance._UI[87] + _ConsumeValue + Localization._Instance._UI[88]; }
 
     public void Consume(Item item) { item._Count--; if (item._Count == 0) item.DropFrom(false); if (item._AttachedInventory.IsInventoryVisibleInScreen()) GameManager._Instance.UpdateInventoryUIBuffer(); }
 }
@@ -854,7 +983,7 @@ public class Apple5 : ItemDefinition, ICanBeConsumed
     public static Apple _Instance { get { if (_instance == null) _instance = new Apple(); return _instance; } }
     private static Apple _instance;
     public float _ConsumeValue => 5f;
-    public Apple5() : base("Apple5", 0.2f, false, false) { _ItemDescription = Localization._Instance._UI[69] + _ConsumeValue + Localization._Instance._UI[70]; }
+    public Apple5() : base("Apple5", 0.2f, false, false) { _ItemDescription = Localization._Instance._UI[87] + _ConsumeValue + Localization._Instance._UI[88]; }
 
     public void Consume(Item item) { item._Count--; if (item._Count == 0) item.DropFrom(false); if (item._AttachedInventory.IsInventoryVisibleInScreen()) GameManager._Instance.UpdateInventoryUIBuffer(); }
 }
@@ -863,7 +992,7 @@ public class Apple6 : ItemDefinition, ICanBeConsumed
     public static Apple _Instance { get { if (_instance == null) _instance = new Apple(); return _instance; } }
     private static Apple _instance;
     public float _ConsumeValue => 5f;
-    public Apple6() : base("Apple6", 0.2f, false, false) { _ItemDescription = Localization._Instance._UI[69] + _ConsumeValue + Localization._Instance._UI[70]; }
+    public Apple6() : base("Apple6", 0.2f, false, false) { _ItemDescription = Localization._Instance._UI[87] + _ConsumeValue + Localization._Instance._UI[88]; }
 
     public void Consume(Item item) { item._Count--; if (item._Count == 0) item.DropFrom(false); if (item._AttachedInventory.IsInventoryVisibleInScreen()) GameManager._Instance.UpdateInventoryUIBuffer(); }
 }

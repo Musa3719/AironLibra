@@ -4,6 +4,7 @@ using System.Collections;
 using System.Collections.Generic;
 using UMA;
 using UMA.CharacterSystem;
+using UMA.Dynamics;
 using UnityEngine;
 
 public abstract class Humanoid : MonoBehaviour, ICanGetHurt
@@ -19,6 +20,7 @@ public abstract class Humanoid : MonoBehaviour, ICanGetHurt
     public SkinnedMeshRenderer _SkinnedMeshRenderer { get { if (_skinnedMeshRenderer == null) _skinnedMeshRenderer = _UmaDynamicAvatar?.transform.Find("UMARenderer")?.GetComponent<SkinnedMeshRenderer>(); return _skinnedMeshRenderer; } }
     private SkinnedMeshRenderer _skinnedMeshRenderer;
     public UMA.PoseTools.ExpressionPlayer _ExpressionPlayer { get; protected set; }
+    public TwistBones _TwistBones { get; protected set; }
     public UMA.Dynamics.UMAPhysicsAvatar _RagdollAvatar { get { if (_ragdollAvatar == null) _ragdollAvatar = _UmaDynamicAvatar.GetComponent<UMA.Dynamics.UMAPhysicsAvatar>(); return _ragdollAvatar; } }
     private UMA.Dynamics.UMAPhysicsAvatar _ragdollAvatar;
     public DynamicCharacterAvatar _UmaDynamicAvatar { get; protected set; }
@@ -58,7 +60,7 @@ public abstract class Humanoid : MonoBehaviour, ICanGetHurt
     public float _MaxStamina { get; set; }
     public float _Stamina { get => _stamina; set { _stamina = Mathf.Clamp(value, 0f, _MaxStamina); } }
     private float _stamina;
-    public float _WaitForRunLastTriggerTime { get; set; }
+    public double _WaitForRunLastTriggerTime { get; set; }
 
     //public Characteristic _Characteristic { get; private set; }
 
@@ -107,8 +109,12 @@ public abstract class Humanoid : MonoBehaviour, ICanGetHurt
     public bool _KickInput { get; set; }
     public bool _DodgeInput { get; set; }
     public bool _BlockInput { get; set; }
+    public bool _AimInput { get; set; }
+    public bool _ReloadInput { get; set; }
     public bool _ParryInput { get; set; }
     public bool _AimInputForThrowInput { get; set; }
+    public Vector3 _AimPosition { get; set; }
+
 
     public float _AttackReadyTime { get; set; }
     public float _WaitTimeForNextAttack { get; set; }
@@ -121,9 +127,12 @@ public abstract class Humanoid : MonoBehaviour, ICanGetHurt
     public bool _IsAttackingFromLeftHandWeapon { get; set; }
     public Weapon _LastAttackWeapon { get; set; }
 
-    public bool _IsOverCarryCapacity => _Inventory._CarryCapacityUse > _HumanCarryCapacity;
+    public float _CarryCapacityRate => _Inventory._CarryCapacityUse / _HumanCarryCapacity;
+    public bool _IsOverCarryCapacity => _CarryCapacityRate > 1f;
+    public bool _IsReloading => _HandState is RangedWeaponHandState state && state._IsReloading;
     public bool _IsDodging { get; set; }
     public bool _IsBlocking { get; set; }
+    public bool _IsInRangedAim { get; set; }
     public bool _IsAttacking { get; set; }
     public bool _IsInAttackReady { get; set; }
     public bool _IsStaggered { get; set; }
@@ -138,13 +147,13 @@ public abstract class Humanoid : MonoBehaviour, ICanGetHurt
     [HideInInspector] public float _JumpTimer = 0.25f;
     [HideInInspector] public float _JumpCounter;
     public float _AimSpeed { get { if (_MovementState is CrouchMoveState) return 3f; else if (_MovementState is ProneMoveState) return 1.25f; else return 5f; } }
-    public float _LastTimeRotated { get; set; }
-    public float _LastTimeAttacked { get; set; }
-    public float _LastAttackReadyTime { get; set; }
-    public float _LastTimeDodged { get; set; }
-    public float _LastTimeTriedParry { get; set; }
+    public double _LastTimeRotated { get; set; }
+    public double _LastTimeAttacked { get; set; }
+    public double _LastAttackReadyTime { get; set; }
+    public double _LastTimeDodged { get; set; }
+    public double _LastTimeTriedParry { get; set; }
 
-    public RaycastHit _RayFoLook;
+    public RaycastHit _RayForLook;
     public Coroutine _RotateAroundCoroutine;
 
     public Coroutine _DodgeMoveCoroutine;
@@ -155,21 +164,15 @@ public abstract class Humanoid : MonoBehaviour, ICanGetHurt
     private float _walkSoundCounter;
     private bool _umaWaitingForCompletion;
 
-    private float _runtimeLoadUnloadCounter;
     private float _checkForClosedSpaceCounter;
     private float _lastAlphaForSnow;
     private float _targetAlphaForSnow;
     private float _checkForSnowCounter;
-    private float _checkForSnowThreshold;
+    private float _checkForSnowThreshold = 1f;
 
-    public bool _ChangeShaderCompleted { get; private set; }
-    private Vector3 _distanceToPlayer;
-    private Coroutine _changeShaderFinishedCoroutine;
     private Coroutine _rightHandWeaponTransformCoroutine;
     private Coroutine _leftHandWeaponTransformCoroutine;
 
-    #region Method Parameters For Opt
-    #endregion
     protected void AwakeForAway()
     {
         if (_HealthSystem == null)
@@ -185,16 +188,19 @@ public abstract class Humanoid : MonoBehaviour, ICanGetHurt
     {
         AwakeForAway();
 
+        Random.InitState(System.DateTime.Now.Millisecond + GetInstanceID());
+        _checkForClosedSpaceCounter = Random.Range(0f, 0.5f);
+        _checkForSnowCounter = Random.Range(0f, _checkForSnowThreshold);
         _WaitForRunLastTriggerTime = -2f;
         _LocomotionSystem = GetComponentInChildren<LocomotionSystem>();
         _FootIKComponent = _LocomotionSystem.GetComponentInChildren<csHomebrewIK>();
         _LeaninganimatorComponent = _LocomotionSystem.GetComponentInChildren<LeaningAnimator>();
         _UmaDynamicAvatar = _LocomotionSystem.transform.Find("char").GetComponent<DynamicCharacterAvatar>();
         _ExpressionPlayer = _UmaDynamicAvatar.GetComponent<UMA.PoseTools.ExpressionPlayer>();
+        _TwistBones = _UmaDynamicAvatar.GetComponent<TwistBones>();
         _ragdollAvatar = _UmaDynamicAvatar.GetComponent<UMA.Dynamics.UMAPhysicsAvatar>();
         SetGender(_IsMale);
         InitOrLoadUmaCharacter();
-        _checkForSnowThreshold = Random.Range(0.85f, 1f);
         _BackpackTransform = _LocomotionSystem.transform.Find("char/Root/Global/Position/Hips/LowerBack/Spine/Spine1/BackpackTransform");
         _RightHandHolderTransform = _LocomotionSystem.transform.Find("char/Root/Global/Position/Hips/LowerBack/Spine/Spine1/RightShoulder/RightArm/RightForeArm/RightHand/RightHolder/RMovable");
         _LeftHandHolderTransform = _LocomotionSystem.transform.Find("char/Root/Global/Position/Hips/LowerBack/Spine/Spine1/LeftShoulder/LeftArm/LeftForeArm/LeftHand/LeftHolder/LMovable");
@@ -214,41 +220,33 @@ public abstract class Humanoid : MonoBehaviour, ICanGetHurt
     protected virtual void Update()
     {
         if (GameManager._Instance._IsGameStopped) return;
-        _distanceToPlayer = new Vector3(GameManager._Instance._Player.transform.position.x - transform.position.x, 0f, GameManager._Instance._Player.transform.position.z - transform.position.z);
         _HealthSystem.Update();
 
         if (_UmaDynamicAvatar != null)
-            ControlUmaDataRuntimeLoadUnload();
-
-        if (_UmaDynamicAvatar != null && _UmaDynamicAvatar.BuildCharacterEnabled && _MovementState != null)
         {
-            ArrangePlaneSound();
             ArrangeStamina();
             ArrangeIsInClosedSpace();
-            ArrangeSnowLayer();
             _MovementState.DoState();
             _HandState.DoState();
             ArrangeExtraGravity();
+            if (_UmaDynamicAvatar.BuildCharacterEnabled)
+            {
+                ArrangePlaneSound();
+                ArrangeSnowLayer();
+            }
         }
 
         if (_umaWaitingForCompletion && _Animator.avatar != null)
-            UmaUpdateCompleted();
+            UmaFirstUpdateCompleted();
     }
-    private void FixedUpdate()
-    {
-        if (_Rigidbody.isKinematic) return;
-
-        if (_UmaDynamicAvatar != null && _UmaDynamicAvatar.BuildCharacterEnabled && _MovementState != null)
-            _MovementState.FixedUpdate();
-    }
-    private void OnAnimatorMove()
+    /*private void OnAnimatorMove()
     {
         ControlAnimatorRootMotion();
-    }
+    }*/
     private void InitOrLoadUmaCharacter()
     {
         _UmaDynamicAvatar.CharacterCreated.AddListener((a) => UmaCreated());
-        _UmaDynamicAvatar.CharacterUpdated.AddListener((a) => UmaUpdated());
+        //_UmaDynamicAvatar.CharacterUpdated.AddListener((a) => UmaUpdated());
     }
     public void UmaCreated()
     {
@@ -257,20 +255,20 @@ public abstract class Humanoid : MonoBehaviour, ICanGetHurt
         _headTransform = _UmaDynamicAvatar.transform.Find("Root").Find("Global").Find("Position").Find("Hips").Find("LowerBack").Find("Spine").Find("Spine1").Find("Neck").Find("Head");
         SetDna(true);
         SetWardrobe();
-        UmaUpdated();
+        UmaFirstUpdated();
 
-        if (_RightHandEquippedItemRef != null)
+        if (_RightHandEquippedItemRef != null && _UmaDynamicAvatar != null && _UmaDynamicAvatar.BuildCharacterEnabled)
             _RightHandEquippedItemRef.SpawnHandItem();
-        if (_LeftHandEquippedItemRef != null)
+        if (_LeftHandEquippedItemRef != null && _UmaDynamicAvatar != null && _UmaDynamicAvatar.BuildCharacterEnabled)
             _LeftHandEquippedItemRef.SpawnHandItem();
-        if (_BackCarryItemRef != null)
+        if (_BackCarryItemRef != null && _UmaDynamicAvatar != null && _UmaDynamicAvatar.BuildCharacterEnabled)
             _BackCarryItemRef.SpawnBackCarryItem();
     }
-    public void UmaUpdated()
+    public void UmaFirstUpdated()
     {
         _umaWaitingForCompletion = true;
     }
-    private void UmaUpdateCompleted()
+    private void UmaFirstUpdateCompleted()
     {
         if (_headTransform == null) return;
 
@@ -286,142 +284,6 @@ public abstract class Humanoid : MonoBehaviour, ICanGetHurt
             //float height = GetDnaValueByName("height");
             //_animator.speed = height <= 0.5f ? 0.77f + (0.9f - 0.77f) * (height / 0.5f) : 0.9f + (1.25f - 0.9f) * ((height - 0.5f) / 0.5f);
         }, 0.1f);
-    }
-
-    private bool IsInNearestNPCs()
-    {
-        return NPCManager._AllNPCs.IndexOf(this as NPC) < (Options._Instance._Quality == 0 ? 5 : (Options._Instance._Quality == 1 ? 10 : 20));
-    }
-    private void ControlUmaDataRuntimeLoadUnload()
-    {
-        if (this is Player) return;
-
-        _runtimeLoadUnloadCounter += Time.deltaTime;
-        if (_runtimeLoadUnloadCounter < 1f) return;
-        _runtimeLoadUnloadCounter = 0f;
-
-
-        if (_distanceToPlayer.magnitude < 30f)
-            EnableHumanData();
-        else if (_distanceToPlayer.magnitude > 40f)
-            DisableHumanData();
-
-        /*if (IsInNearestNPCs())
-            transform.Find("NPC(Clone)").Find("Canvas").Find("Test").GetComponent<UnityEngine.UI.Image>().enabled = true;
-        else
-            transform.Find("NPC(Clone)").Find("Canvas").Find("Test").GetComponent<UnityEngine.UI.Image>().enabled = false;*/
-
-        if (IsInNearestNPCs())
-            EnableHumanAdditionals();
-        else
-            DisableHumanAdditionals();
-    }
-    private void EnableHumanAdditionals()
-    {
-        if (_MovementState is UnconsciousMoveState) return;
-
-        if (Options._Instance._IsExpressionPlayerEnabled)
-        {
-            if (!_ExpressionPlayer.enabled)
-            {
-                _ExpressionPlayer.enabled = true;
-                _ExpressionPlayer.GetComponent<TwistBones>().enabled = true;
-            }
-        }
-        else
-        {
-            if (_ExpressionPlayer.enabled)
-            {
-                _ExpressionPlayer.enabled = false;
-                _ExpressionPlayer.GetComponent<TwistBones>().enabled = false;
-            }
-        }
-        if (Options._Instance._IsLeaningEnabled)
-        {
-            if (!_LeaninganimatorComponent.enabled)
-                _LeaninganimatorComponent.enabled = true;
-        }
-        else
-        {
-            if (_LeaninganimatorComponent.enabled)
-                _LeaninganimatorComponent.enabled = false;
-        }
-
-        if (Options._Instance._IsFootIKEnabled && ((_MovementState is LocomotionState) || (_MovementState is CrouchMoveState)))
-        {
-            if (!_FootIKComponent.enabled)
-                _FootIKComponent.enabled = true;
-        }
-        else
-        {
-            if (_FootIKComponent.enabled)
-                _FootIKComponent.enabled = false;
-        }
-    }
-    public void DisableHumanAdditionals()
-    {
-        if (_ExpressionPlayer.enabled)
-        {
-            _ExpressionPlayer.enabled = false;
-            _ExpressionPlayer.GetComponent<TwistBones>().enabled = false;
-        }
-        if (_LeaninganimatorComponent.enabled)
-            _LeaninganimatorComponent.enabled = false;
-        if (_FootIKComponent.enabled)
-            _FootIKComponent.enabled = false;
-
-    }
-    public void EnableHumanData()
-    {
-        if (this is NPC && _UmaDynamicAvatar.BuildCharacterEnabled) return;
-
-        SetGender(_IsMale);
-        SetDna(true);
-        SetWardrobe();
-
-        if (_CharacterColors != null)
-        {
-            foreach (var color in _CharacterColors)
-            {
-                ChangeColor(color.Key, color.Value);
-            }
-        }
-
-        _Animator.enabled = true;
-        _UmaDynamicAvatar.BuildCharacterEnabled = true;
-    }
-    public void DisableHumanData()
-    {
-        //if (!_UmaDynamicAvatar.BuildCharacterEnabled) return;
-
-        if (this is NPC && (_SkinnedMeshRenderer == null || _SkinnedMeshRenderer.sharedMesh == null)) return;
-
-        if (_RightHandEquippedItemRef != null)
-            _RightHandEquippedItemRef.DespawnHandItem();
-        if (_LeftHandEquippedItemRef != null)
-            _LeftHandEquippedItemRef.DespawnHandItem();
-        if (_BackCarryItemRef != null)
-            _BackCarryItemRef.DespawnBackCarryItem();
-
-        if (!(this is Player))
-            DisableHumanAdditionals();
-
-        _Animator.enabled = false;
-
-
-        if (_SkinnedMeshRenderer != null && _SkinnedMeshRenderer.sharedMesh != null)
-        {
-            Destroy(_SkinnedMeshRenderer.sharedMesh);
-            _SkinnedMeshRenderer.sharedMesh = null;
-        }
-
-        _UmaDynamicAvatar.BuildCharacterEnabled = false;
-        if (_UmaDynamicAvatar.umaData != null)
-        {
-            _UmaDynamicAvatar.umaData.CleanAvatar();
-            _UmaDynamicAvatar.umaData.CleanMesh(false);
-            _UmaDynamicAvatar.umaData.CleanTextures();
-        }
     }
 
     public void ActivateCombatMode()
@@ -455,6 +317,7 @@ public abstract class Humanoid : MonoBehaviour, ICanGetHurt
     public void StopCombatActions()
     {
         _IsBlocking = false;
+        _IsInRangedAim = false;
         //stop attacks
     }
     private IEnumerator HandWeaponTransformCoroutine(bool isToHand, bool isRight)
@@ -675,7 +538,7 @@ public abstract class Humanoid : MonoBehaviour, ICanGetHurt
             _UmaDynamicAvatar.BuildCharacterEnabled = true;
         }
     }
-    private void SetWardrobe()
+    protected void SetWardrobe()
     {
         if (_WardrobeData == null || _UmaDynamicAvatar == null) return;
 
@@ -685,47 +548,6 @@ public abstract class Humanoid : MonoBehaviour, ICanGetHurt
             WearWardrobe(wardrobe, true);
         }
     }
-
-    private IEnumerator ChangeShaderFinishedCoroutine()
-    {
-        _ChangeShaderCompleted = false;
-        yield return new WaitForSeconds(1f);
-        _ChangeShaderCompleted = true;
-    }
-    private Texture2D ConvertToMaskMap(Texture metallicTex, float smoothness)
-    {
-        if (metallicTex == null) return null;
-
-        RenderTexture tmp = RenderTexture.GetTemporary(metallicTex.width, metallicTex.height, 0, RenderTextureFormat.ARGB32);
-        Graphics.Blit(metallicTex, tmp);
-
-        RenderTexture prev = RenderTexture.active;
-        RenderTexture.active = tmp;
-
-        Texture2D src = new Texture2D(metallicTex.width, metallicTex.height, TextureFormat.RGBA32, false);
-        src.ReadPixels(new Rect(0, 0, tmp.width, tmp.height), 0, 0);
-        src.Apply();
-
-        RenderTexture.active = prev;
-        RenderTexture.ReleaseTemporary(tmp);
-
-        // pixel düzenle
-        Color[] pixels = src.GetPixels();
-        for (int i = 0; i < pixels.Length; i++)
-        {
-            float r = pixels[i].r;
-            float s = pixels[i].a;
-            pixels[i] = new Color(r, 1f, 1f, s == 1f ? smoothness : s);
-        }
-
-        Texture2D mask = new Texture2D(src.width, src.height, TextureFormat.RGBA32, false);
-        mask.SetPixels(pixels);
-        mask.Apply();
-
-        return mask;
-    }
-
-
     private void ArrangeIsInClosedSpace()
     {
         if (_checkForClosedSpaceCounter > 0.5f)
@@ -848,10 +670,7 @@ public abstract class Humanoid : MonoBehaviour, ICanGetHurt
     public void ChangeAnimation(string name, float fadeTime = 0.2f, float attackSpeedMultiplier = 1f, int layer = -1)
     {
         _Animator.SetFloat(AnimatorParameters.AttackSpeedMultiplier, attackSpeedMultiplier);
-        if (layer == -1)
-            _Animator.CrossFadeInFixedTime(name, fadeTime);
-        else
-            _Animator.CrossFadeInFixedTime(name, fadeTime, layer);
+        _Animator.CrossFadeInFixedTime(name, fadeTime, layer);
     }
     public void ChangeAnimationWithOffset(string name, float normalizedTimeOffset, float fadeTime, float attackSpeedMultiplier = 1f, int layer = -1)
     {
@@ -876,9 +695,9 @@ public abstract class Humanoid : MonoBehaviour, ICanGetHurt
 
     private void ArrangePlaneSound()
     {
-        if (_distanceToPlayer.magnitude > 40f) return;
+        if (this is NPC npc && npc._DistanceToPlayer.sqrMagnitude > 1600f) return; // sqr 1600 real value 40, optimized
 
-        Physics.Raycast(transform.position + Vector3.up, -Vector3.up, out RaycastHit hit, 2f, GameManager._Instance._TerrainAndSolidMask);
+        Physics.Raycast(transform.position + Vector3.up, -Vector3.up, out RaycastHit hit, 2f, GameManager._Instance._TerrainSolidMask);
         float speed = _Rigidbody.linearVelocity.magnitude;
         if (hit.collider != null)
         {
@@ -958,14 +777,14 @@ public abstract class Humanoid : MonoBehaviour, ICanGetHurt
         nearestCarriable = null;
         float nearestDistanceForInv = float.MaxValue;
         float nearestCarriableDistance = float.MaxValue;
-        Collider[] colliders = Physics.OverlapSphere(transform.position, 1f);
+        Collider[] colliders = Physics.OverlapSphere(transform.position, 1f, LayerMask.GetMask(new string[] { "SolidObject", "Human", "RagdollHitbox", "CarriableObject" }));
         foreach (var collider in colliders)
         {
             if (collider.TryGetComponent(out CarriableObject carriableObject))
             {
                 CheckForNearInventoriesCommon(carriableObject, ref nearestCarriableDistance, ref nearestCarriable, collider);
             }
-            if (collider != null && collider.transform.parent != null && collider.transform.parent.TryGetComponent(out InventoryHolder anotherInventoryHolder))
+            if (collider != null && collider.TryGetComponent(out InventoryHolder anotherInventoryHolder))
             {
                 CheckForNearInventoriesCommon(anotherInventoryHolder, ref nearestDistanceForInv, ref nearestInventoryHolder, collider);
             }
@@ -1008,7 +827,7 @@ public abstract class Humanoid : MonoBehaviour, ICanGetHurt
     }
     private Humanoid GetHumanoidFromCollider(Collider collider)
     {
-        if (collider == null || (collider.gameObject.layer != LayerMask.NameToLayer("Human") && collider.gameObject.layer != LayerMask.NameToLayer("RagdollHitbox"))) return null;
+        if (collider == null || (!GameManager._Instance._HumanMask.Contains(collider.gameObject.layer) && collider.gameObject.layer != LayerMask.NameToLayer("RagdollHitbox"))) return null;
         Transform parent = collider.transform;
         while (parent.parent != null)
         {
@@ -1032,6 +851,7 @@ public abstract class Humanoid : MonoBehaviour, ICanGetHurt
     {
         _IsInCombatMode = false;
         //IsDead = true; make state unconscious
+        _UmaDynamicAvatar.GetComponent<UMAPhysicsAvatar>().enabled = true;
     }
 
 }

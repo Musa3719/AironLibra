@@ -53,14 +53,12 @@ public class LocomotionState : MovementState
             _human.EnterState(new UnconsciousMoveState(_human, _human._HealthSystem._LastHitForce, _human._HealthSystem._LastHitBoneName, _human._HealthSystem._LastHitDir));
             return;
         }
-
         //Check For State Change
         if (MovementStateMethods.IsInDeepWater(_human))
         {
             _human.EnterState(new SwimMoveState(_human));
             return;
         }
-
         if (_stateChangeCounter > 0f)
             _stateChangeCounter -= Time.deltaTime;
         if (_stateChangeCounter <= 0f)
@@ -309,6 +307,11 @@ public class SwimMoveState : MovementState
             return;
         }
 
+        if (_human._IsSprinting)
+            _human._LocomotionSystem.MovementSpeedMultiplierMoveState = 0.63f;
+        else
+            _human._LocomotionSystem.MovementSpeedMultiplierMoveState = 0.8f;
+
         if (_human._DirectionInput.magnitude < 0.2f && _isSwimAnimForward)
         {
             _human.ChangeAnimation("Swim_Idle", 0.4f);
@@ -414,8 +417,11 @@ public class UnconsciousMoveState : MovementState
     }
     public void EnterState(MovementState oldState)
     {
+        if (_human is NPC npc)
+        {
+            npc.DisableHumanAdditionals();
+        }
         _human._Animator.enabled = false;
-        _human.DisableHumanAdditionals();
         Vector3 currentVel = _human._Rigidbody.linearVelocity;
         _human._Rigidbody.isKinematic = true;
         _human._Rigidbody.Sleep();
@@ -448,7 +454,7 @@ public class UnconsciousMoveState : MovementState
     }
     private IEnumerator GetUpCoroutine()
     {
-        float startTime = Time.time;
+        double startTime = Time.timeAsDouble;
         List<Transform> ragdollBones = _human._RagdollAvatar._Bones;
         Animator animator = _human._Animator;
 
@@ -518,7 +524,7 @@ public class UnconsciousMoveState : MovementState
         animator.enabled = true;
         _human._Animator.Play(animName);
 
-        while (startTime + 1.5f > Time.time)
+        while (startTime + 1.5f > Time.timeAsDouble)
             yield return null;
 
         _human.EnterState(new LocomotionState(_human));
@@ -583,9 +589,14 @@ public class EmptyHandsState : HandState
             _human.EnterState(new CarryHandState(_human));
             return;
         }
-        if (HandStateMethods.CheckForWeaponState(_human))
+        if (HandStateMethods.CheckForMeleeWeaponState(_human))
         {
-            _human.EnterState(new WeaponHandState(_human));
+            _human.EnterState(new MeleeWeaponHandState(_human));
+            return;
+        }
+        if (HandStateMethods.CheckForRangedWeaponState(_human))
+        {
+            _human.EnterState(new RangedWeaponHandState(_human));
             return;
         }
 
@@ -619,9 +630,14 @@ public class CarryHandState : HandState
             _human.EnterState(new EmptyHandsState(_human));
             return;
         }
-        if (HandStateMethods.CheckForWeaponState(_human))
+        if (HandStateMethods.CheckForMeleeWeaponState(_human))
         {
-            _human.EnterState(new WeaponHandState(_human));
+            _human.EnterState(new MeleeWeaponHandState(_human));
+            return;
+        }
+        if (HandStateMethods.CheckForRangedWeaponState(_human))
+        {
+            _human.EnterState(new RangedWeaponHandState(_human));
             return;
         }
 
@@ -631,11 +647,11 @@ public class CarryHandState : HandState
     }
 }
 
-public class WeaponHandState : HandState
+public class MeleeWeaponHandState : HandState
 {
     public Humanoid _Human => _human;
     private Humanoid _human;
-    public WeaponHandState(Humanoid human)
+    public MeleeWeaponHandState(Humanoid human)
     {
         _human = human;
     }
@@ -663,18 +679,78 @@ public class WeaponHandState : HandState
             _human.EnterState(new EmptyHandsState(_human));
             return;
         }
+        if (HandStateMethods.CheckForRangedWeaponState(_human))
+        {
+            _human.EnterState(new RangedWeaponHandState(_human));
+            return;
+        }
 
         if (_human is Player)
             HandStateMethods.ArrangeLookAtForCamPosition(_human as Player);
 
-        HandStateMethods.CheckAttack(_human);
+        HandStateMethods.CheckMeleeAttack(_human);
         HandStateMethods.ArrangeBlock(_human);
         HandStateMethods.TryParry(_human);
 
         if (_human._IsInAttackReady)
         {
-            _human._AttackReadySpeed = Mathf.Pow(Mathf.Clamp(_human._LastAttackReadyTime + 1f - Time.time, 0f, 0.8f), 1.75f);
+            _human._AttackReadySpeed = Mathf.Pow(Mathf.Clamp((float)(_human._LastAttackReadyTime + 1 - Time.timeAsDouble), 0f, 0.8f), 1.75f);
         }
+    }
+}
+public class RangedWeaponHandState : HandState
+{
+    public Humanoid _Human => _human;
+    private Humanoid _human;
+    public RangedWeapon _RangedWeapon { get; private set; }
+    public bool _IsReloading { get; set; }
+    public double _LastAimStartedTime { get; set; }
+    public RangedWeaponHandState(Humanoid human)
+    {
+        _human = human;
+    }
+    public void EnterState(HandState oldState)
+    {
+        _human._LocomotionSystem.MovementSpeedMultiplierHandState = 1f;
+        if (_human is Player player)
+            GameManager._Instance.BufferActivated(ref player._AttackReadyBuffer, player, ref player._AttackReadyCoroutine);
+        _human._AimPosition = _human.transform.forward;
+    }
+
+    public void ExitState(HandState newState)
+    {
+        GameManager._Instance._RangedAimMesh.gameObject.SetActive(false);
+        GamepadMouse._Instance._PosForRangedAim = Vector2.zero;
+        _human.StopCombatActions();
+    }
+    public void DoState()
+    {
+        if (_RangedWeapon == null)
+            _RangedWeapon = HandStateMethods.GetRangedWeapon(_Human);
+
+        //Check For State Change
+        if (HandStateMethods.CheckForCarryState(_human))
+        {
+            _human.EnterState(new CarryHandState(_human));
+            return;
+        }
+        if (HandStateMethods.CheckForEmptyState(_human))
+        {
+            _human.EnterState(new EmptyHandsState(_human));
+            return;
+        }
+        if (HandStateMethods.CheckForMeleeWeaponState(_human))
+        {
+            _human.EnterState(new MeleeWeaponHandState(_human));
+            return;
+        }
+
+        if (_human is Player)
+            HandStateMethods.ArrangeLookAtForCamPosition(_human as Player, true);
+
+        HandStateMethods.ArrangeReload(_human);
+        HandStateMethods.ArrangeRangedAim(_human);
+        HandStateMethods.CheckRangedAttack(_human);
     }
 }
 
