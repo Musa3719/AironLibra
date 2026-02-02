@@ -13,8 +13,8 @@ public class SceneOpeningPanel : MonoBehaviour
     }
     private IEnumerator SceneOpeningCoroutine()
     {
-        float startTime = Time.time;
-        while (Time.time < startTime + 1f)
+        double startTime = Time.timeAsDouble;
+        while (Time.timeAsDouble < startTime + 1)
         {
             if (M_Input.GetButtonDown("Esc"))
                 break;

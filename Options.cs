@@ -49,8 +49,8 @@ public class Options : MonoBehaviour
         _SoundSlider.value = _SoundVolume;
         _MusicSlider.value = _MusicVolume;
 
-        _IsExpressionPlayerEnabled = true;
-        _IsFootIKEnabled = true;
+        _IsExpressionPlayerEnabled = false;
+        _IsFootIKEnabled = false;
         _IsLeaningEnabled = false;
         _IsLookForCamDistanceEnabled = true;
     }

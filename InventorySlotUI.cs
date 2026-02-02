@@ -182,7 +182,7 @@ public class InventorySlotUI : MonoBehaviour, IPointerEnterHandler, IPointerExit
         else
             selfItem.DropFrom(false);
 
-        if ((!isEquipping && !targetInv.CanTakeThisItem(selfItem)) || (isEquipping && !targetInv.CanEquipThisItem(selfItem)) || (!selfIsEquipping && !selfInv.CanTakeThisItem(item)) || (selfIsEquipping && !selfInv.CanEquipThisItem(item)))//failed
+        if ((!isEquipping && !targetInv.CanTakeThisItem(selfItem)) || (isEquipping && !targetInv.CanEquipThisItem(selfItem, isToLeftHand)) || (!selfIsEquipping && !selfInv.CanTakeThisItem(item)) || (selfIsEquipping && !selfInv.CanEquipThisItem(item, isToLeftHand)))//failed
         {
             if (itemWasEquipped)
                 item.Equip(targetInv);
@@ -210,7 +210,7 @@ public class InventorySlotUI : MonoBehaviour, IPointerEnterHandler, IPointerExit
     private bool SendArranger(Inventory targetInv, bool isEquipping, bool isToLeftHand)
     {
         if (!isEquipping && !targetInv.CanTakeThisItem(_ItemRef)) return false;
-        if (isEquipping && !targetInv.CanEquipThisItem(_ItemRef)) return false;
+        if (isEquipping && !targetInv.CanEquipThisItem(_ItemRef, isToLeftHand)) return false;
 
         Item item = _ItemRef;
         if (item._IsEquipped)

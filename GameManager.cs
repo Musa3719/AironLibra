@@ -13,14 +13,22 @@ using UnityEngine.InputSystem;
 using UnityEngine.ResourceManagement.AsyncOperations;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
+using static UnityEditor.PlayerSettings;
 
 public class GameManager : MonoBehaviour
 {
+    public bool _Is1;
+    public bool _Is2;
+    public bool _Is3;
+    public bool _Is4;
+    public bool _Is5;
+
     public static GameManager _Instance;
     public float _TerrainDimensionMagnitude => 1024f;
     public int _NumberOfColumnsForTerrains => 1;
     public int _NumberOfRowsForTerrains => 1;
 
+    public Transform _RangedAimMesh { get; private set; }
     public GraphicRaycaster _GraphicRaycaster { get; private set; }
 
     public Dictionary<string, AssetReferenceGameObject> _ItemNameToPrefab;
@@ -35,10 +43,12 @@ public class GameManager : MonoBehaviour
     public List<Vector3>[,] _ObjectRotationsInChunk;
     //chest data
     //npc data
-    public ushort _NumberOfNpcs { get; private set; }
     public GameObject _ListenerObj { get { if (_Player == null) return _MainCamera; return _Player; } }
     public GameObject _MainCamera { get; private set; }
     public GameObject _Player { get; private set; }
+    public Vector3 _PlayerPos { get; private set; }
+
+    public ReflectionProbe _MainReflectionProbe { get; private set; }
     public GameObject _StopScreen { get; private set; }
     public GameObject _InGameMenu { get; private set; }
     public GameObject _InventoryScreen { get; private set; }
@@ -60,6 +70,7 @@ public class GameManager : MonoBehaviour
     public GameObject _SaveScreen { get; private set; }
     public GameObject _LoadingObject { get; private set; }
     public Transform _EnvironmentTransform { get; private set; }
+    public Transform _NPCHolderTransform { get; private set; }
     public ObjectPool _NPCPool { get; private set; }
     public InventorySlotUI _InteractMenuSlotUI { get; set; }
     public InventorySlotUI _LastClickedSlotUI { get; set; }
@@ -90,10 +101,14 @@ public class GameManager : MonoBehaviour
 
     public int _LevelIndex { get; private set; }
 
-    public LayerMask _TerrainSolidAndWaterMask;
-    public LayerMask _TerrainAndWaterMask;
-    public LayerMask _TerrainAndSolidMask;
-    public LayerMask _SolidAndHumanMask;
+    public ushort _NumberOfNpcs;
+
+    public LayerMask _HumanMask;
+    public LayerMask _TerrainSolidWaterHumanMask;
+    public LayerMask _TerrainSolidWaterMask;
+    public LayerMask _TerrainWaterMask;
+    public LayerMask _TerrainSolidMask;
+    public LayerMask _SolidHumanMask;
 
     private List<string> _maleDnaNames;
     private List<string> _femaleDnaNames;
@@ -110,29 +125,31 @@ public class GameManager : MonoBehaviour
     private float _isSnowingTimer;
     private float _isRainingTimer;
 
+    private float _mainReflectionProbeUpdateCounter;
+
     public Queue<float> _fpsValues;
 
     private void Awake()
     {
         _Instance = this;
+        NPCManager.Awake();
         _GraphicRaycaster = FindFirstObjectByType<GraphicRaycaster>();
         _fpsValues = new Queue<float>();
         transform.Find("CharacterCreation").GetComponent<CharacterCreation>().Init();
         Shader.EnableKeyword("_USEGLOBALSNOWLEVEL");
         Shader.EnableKeyword("_PW_GLOBAL_COVER_LAYER");
         Shader.EnableKeyword("_PW_COVER_ENABLED");
-        NPCManager._AllNPCs = new List<NPC>();
 
         _maleDnaNames = UMAGlobalContext.Instance.GetRace("HumanMale").GetDNANames();
         _femaleDnaNames = UMAGlobalContext.Instance.GetRace("HumanFemaleHighPoly").GetDNANames();
 
-        NPCManager._Comparer = new NPCDistanceComparer();
         _ItemHandleDatasInChunk = new List<ItemHandleData>[_NumberOfColumnsForTerrains, _NumberOfRowsForTerrains];
         _ObjectPositionsInChunk = new List<Vector3>[_NumberOfColumnsForTerrains, _NumberOfRowsForTerrains];
         _ObjectRotationsInChunk = new List<Vector3>[_NumberOfColumnsForTerrains, _NumberOfRowsForTerrains];
         _ObjectParentsInChunk = new List<Transform>[_NumberOfColumnsForTerrains, _NumberOfRowsForTerrains];
         _MainCamera = Camera.main.gameObject;
         _Player = GameObject.FindGameObjectWithTag("Player");
+        _MainReflectionProbe = _Player.transform.Find("MainReflectionProbe").GetComponent<ReflectionProbe>();
 
         //Application.targetFrameRate = 60;
         _OptionsScreen = GameObject.FindGameObjectWithTag("UI").transform.Find("UIMain").Find("Options").gameObject;
@@ -142,8 +159,10 @@ public class GameManager : MonoBehaviour
         _LevelIndex = SceneManager.GetActiveScene().buildIndex;
         if (_LevelIndex != 0)
         {
-            _NumberOfNpcs = 1;
-            _EnvironmentTransform = GameObject.Find("Environment").transform;
+            _mainReflectionProbeUpdateCounter = 100f;
+            _EnvironmentTransform = GameObject.FindGameObjectWithTag("EnvironmentTransform").transform;
+            _NPCHolderTransform = GameObject.FindGameObjectWithTag("NPCHolderTransform").transform;
+            _RangedAimMesh = _EnvironmentTransform.transform.GetChild(0);
             _StopScreen = GameObject.FindGameObjectWithTag("UI").transform.Find("UIMain").Find("StopScreen").gameObject;
             _InGameMenu = GameObject.FindGameObjectWithTag("UI").transform.Find("UIMain").Find("InGameMenu").gameObject;
             _InventoryScreen = GameObject.FindGameObjectWithTag("UI").transform.Find("UIMain").Find("InGameMenu").Find("InventoryScreen").gameObject;
@@ -239,6 +258,10 @@ public class GameManager : MonoBehaviour
     {
         if (_LevelIndex != 0)
         {
+            _PlayerPos = _Player.transform.position;
+            UpdateMainReflectionProbe();
+            NPCManager.Update();
+
             if (_LastClickedSlotUI != null)
             {
                 if (M_Input.GetButton("Fire1") && !_LastClickedSlotUI._IsHoverFromGamepad)
@@ -276,7 +299,6 @@ public class GameManager : MonoBehaviour
             {
                 _InventoryItemInteractPopup.SetActive(false);
             }
-            NPCManager.Update();
 
             if (Gaia.ProceduralWorldsGlobalWeather.Instance.IsSnowing)
             {
@@ -401,10 +423,17 @@ public class GameManager : MonoBehaviour
     public void InitDictionaries()
     {
         _ItemNameToPrefab = new Dictionary<string, AssetReferenceGameObject>();
+        _ItemNameToPrefab.Add("Punch", AddressablesController._Instance._ItemContainer);
         _ItemNameToPrefab.Add("Apple", AddressablesController._Instance._ItemContainer);
-        _ItemNameToPrefab.Add("ChestArmor_1", AddressablesController._Instance._ChestArmor_1Item);
-        _ItemNameToPrefab.Add("LongSword_1", AddressablesController._Instance._LongSword_1Item);
-        _ItemNameToPrefab.Add("Backpack", AddressablesController._Instance._BackpackItem);
+        _ItemNameToPrefab.Add("ChestArmor_1", AddressablesController._Instance._ChestArmor_1_Item);
+        _ItemNameToPrefab.Add("LongSword_1", AddressablesController._Instance._LongSword_1_Item);
+        _ItemNameToPrefab.Add("Crossbow", AddressablesController._Instance._Crossbow_Item);
+        _ItemNameToPrefab.Add("SurvivalBow", AddressablesController._Instance._SurvivalBow_Item);
+        _ItemNameToPrefab.Add("HuntingBow", AddressablesController._Instance._HuntingBow_Item);
+        _ItemNameToPrefab.Add("CompositeBow", AddressablesController._Instance._CompositeBow_Item);
+        _ItemNameToPrefab.Add("BoltArrow", AddressablesController._Instance._ItemContainer);
+        _ItemNameToPrefab.Add("Arrow", AddressablesController._Instance._ItemContainer);
+        _ItemNameToPrefab.Add("Backpack", AddressablesController._Instance._Backpack_Item);
         _ItemNameToPrefab.Add("Apple2", AddressablesController._Instance._ItemContainer);
         _ItemNameToPrefab.Add("Apple3", AddressablesController._Instance._ItemContainer);
         _ItemNameToPrefab.Add("Apple4", AddressablesController._Instance._ItemContainer);
@@ -414,15 +443,21 @@ public class GameManager : MonoBehaviour
 
 
         _ItemNameToSprite = new Dictionary<string, AssetReferenceSprite>();
-        _ItemNameToSprite.Add("Apple", AddressablesController._Instance._AppleSprite);
-        _ItemNameToSprite.Add("ChestArmor_1", AddressablesController._Instance._ChestArmor_1Sprite);
-        _ItemNameToSprite.Add("LongSword_1", AddressablesController._Instance._LongSword_1Sprite);
-        _ItemNameToSprite.Add("Backpack", AddressablesController._Instance._BackpackSprite);
-        _ItemNameToSprite.Add("Apple2", AddressablesController._Instance._AppleSprite);
-        _ItemNameToSprite.Add("Apple3", AddressablesController._Instance._AppleSprite);
-        _ItemNameToSprite.Add("Apple4", AddressablesController._Instance._AppleSprite);
-        _ItemNameToSprite.Add("Apple5", AddressablesController._Instance._AppleSprite);
-        _ItemNameToSprite.Add("Apple6", AddressablesController._Instance._AppleSprite);
+        _ItemNameToSprite.Add("Apple", AddressablesController._Instance._Apple_Sprite);
+        _ItemNameToSprite.Add("ChestArmor_1", AddressablesController._Instance._ChestArmor_1_Sprite);
+        _ItemNameToSprite.Add("LongSword_1", AddressablesController._Instance._LongSword_1_Sprite);
+        _ItemNameToSprite.Add("Crossbow", AddressablesController._Instance._Crossbow_Sprite);
+        _ItemNameToSprite.Add("SurvivalBow", AddressablesController._Instance._SurvivalBow_Sprite);
+        _ItemNameToSprite.Add("HuntingBow", AddressablesController._Instance._HuntingBow_Sprite);
+        _ItemNameToSprite.Add("CompositeBow", AddressablesController._Instance._CompositeBow_Sprite);
+        _ItemNameToSprite.Add("BoltArrow", AddressablesController._Instance._Bolt_Sprite);
+        _ItemNameToSprite.Add("Arrow", AddressablesController._Instance._Arrow_Sprite);
+        _ItemNameToSprite.Add("Backpack", AddressablesController._Instance._Backpack_Sprite);
+        _ItemNameToSprite.Add("Apple2", AddressablesController._Instance._Apple_Sprite);
+        _ItemNameToSprite.Add("Apple3", AddressablesController._Instance._Apple_Sprite);
+        _ItemNameToSprite.Add("Apple4", AddressablesController._Instance._Apple_Sprite);
+        _ItemNameToSprite.Add("Apple5", AddressablesController._Instance._Apple_Sprite);
+        _ItemNameToSprite.Add("Apple6", AddressablesController._Instance._Apple_Sprite);
         //_ItemNameToSprite.Add("Copper Coin", AddressablesController._Instance._AppleSprite);
 
         _AnimNameToAttackStartTime = new Dictionary<string, float>();
@@ -481,22 +516,22 @@ public class GameManager : MonoBehaviour
         }
     }
     /// <param name="speed">1/second</param>
-    public float LinearLerpFloat(float startValue, float endValue, float speed, float startTime)
+    public float LinearLerpFloat(float startValue, float endValue, float speed, double startTime)
     {
-        float endTime = startTime + 1 / speed;
-        return Mathf.Lerp(startValue, endValue, (Time.time - startTime) / (endTime - startTime));
+        double endTime = startTime + 1 / speed;
+        return Mathf.Lerp(startValue, endValue, (float)((Time.timeAsDouble - startTime) / (endTime - startTime)));
     }
     /// <param name="speed">1/second</param>
-    public Vector2 LinearLerpVector2(Vector2 startValue, Vector2 endValue, float speed, float startTime)
+    public Vector2 LinearLerpVector2(Vector2 startValue, Vector2 endValue, float speed, double startTime)
     {
-        float endTime = startTime + 1 / speed;
-        return Vector2.Lerp(startValue, endValue, (Time.time - startTime) / (endTime - startTime));
+        double endTime = startTime + 1 / speed;
+        return Vector2.Lerp(startValue, endValue, (float)((Time.timeAsDouble - startTime) / (endTime - startTime)));
     }
     /// <param name="speed">1/second</param>
-    public Vector3 LinearLerpVector3(Vector3 startValue, Vector3 endValue, float speed, float startTime)
+    public Vector3 LinearLerpVector3(Vector3 startValue, Vector3 endValue, float speed, double startTime)
     {
-        float endTime = startTime + 1 / speed;
-        return Vector3.Lerp(startValue, endValue, (Time.time - startTime) / (endTime - startTime));
+        double endTime = startTime + 1 / speed;
+        return Vector3.Lerp(startValue, endValue, (float)((Time.timeAsDouble - startTime) / (endTime - startTime)));
     }
 
     /// <param name="speed">1/second</param>
@@ -556,7 +591,7 @@ public class GameManager : MonoBehaviour
     }
     public float GetTerrainOrWaterHeightOnPosition(Vector3 pos)
     {
-        Physics.Raycast(pos + Vector3.up * 1500f, -Vector3.up, out RaycastHit hit, 2000f, _TerrainAndWaterMask);
+        Physics.Raycast(pos + Vector3.up * 1500f, -Vector3.up, out RaycastHit hit, 2000f, _TerrainWaterMask);
         if (hit.collider != null)
             return hit.point.y;
 
@@ -606,8 +641,8 @@ public class GameManager : MonoBehaviour
         }
         var handles = new List<AsyncOperationHandle>();
         handles.AddRange(AddressablesController._Instance.LoadTerrainObjects(x, y));
-        if (!isFromReloadChunk)
-            handles.AddRange(AddressablesController._Instance.SpawnNpcs(x, y));
+        //if (!isFromReloadChunk)
+        //handles.AddRange(AddressablesController._Instance.SpawnNpcs(x, y));
         // animals, plants vs...
         var groupHandle = Addressables.ResourceManager.CreateGenericGroupOperation(handles);
 
@@ -630,8 +665,8 @@ public class GameManager : MonoBehaviour
         }
 
         AddressablesController._Instance.UnloadTerrainObjects(x, y);
-        if (!isFromReloadChunk)
-            AddressablesController._Instance.DespawnNpcs(x, y);
+        //if (!isFromReloadChunk)
+        //AddressablesController._Instance.DespawnNpcs(x, y);
         // animals, plants vs...
 
         yield return null;
@@ -664,7 +699,7 @@ public class GameManager : MonoBehaviour
     }
     public void CreateNewCarriableObjectToWorld(Item item, Vector3 spawnPos)
     {
-        Physics.Raycast(spawnPos, -Vector3.up, out RaycastHit hit, 30f, _TerrainSolidAndWaterMask);
+        Physics.Raycast(spawnPos, -Vector3.up, out RaycastHit hit, 30f, _TerrainSolidWaterMask);
         spawnPos = hit.point;
         CreateEnvironmentPrefabToWorld(item._ItemHandleData, _EnvironmentTransform, spawnPos, Vector3.zero);
     }
@@ -686,7 +721,7 @@ public class GameManager : MonoBehaviour
         _ObjectPositionsInChunk[chunk.x, chunk.y].Add(pos);
         _ObjectRotationsInChunk[chunk.x, chunk.y].Add(angles);
         _ObjectParentsInChunk[chunk.x, chunk.y].Add(parent);
-        //itemHandleData._AssetRef = objRef;
+
         ReloadChunk(chunk.x, chunk.y);
     }
     public void DestroyEnvironmentPrefabFromWorld(ItemHandleData itemHandleData)
@@ -702,11 +737,11 @@ public class GameManager : MonoBehaviour
         if (_ObjectParentsInChunk[x, y] == null || i >= _ObjectParentsInChunk[x, y].Count) return;
 
         var handles = AddressablesController._Instance._HandlesForSpawned;
-        if (itemHandleData._SpawnHandle.HasValue && handles[x, y] != null && handles[x, y].Contains(itemHandleData._SpawnHandle.Value))
+        /*if (itemHandleData._SpawnHandle.HasValue && handles[x, y] != null && handles[x, y].Contains(itemHandleData._SpawnHandle.Value))
         {
             AddressablesController._Instance.DespawnObj(itemHandleData._SpawnHandle.Value);
             handles[x, y].Remove((itemHandleData._SpawnHandle.Value));
-        }
+        }*/
         itemHandleData._SpawnHandle = null;
         _ItemHandleDatasInChunk[x, y].RemoveAt(i);
         _ObjectPositionsInChunk[x, y].RemoveAt(i);
@@ -715,6 +750,10 @@ public class GameManager : MonoBehaviour
 
         ReloadChunk(x, y);
     }
+    public void DestroyProjectileFromWorld(CarriableObject carriableObject)
+    {
+        Destroy(carriableObject.gameObject);
+    }
     public void SetTerrainLinks(GameObject obj)
     {
         var links = obj.GetComponentsInChildren<NavMeshLink>();
@@ -722,7 +761,7 @@ public class GameManager : MonoBehaviour
         {
             if (item.CompareTag("LinkWithTerrain"))
             {
-                Physics.Raycast(item.transform.position + item.startPoint + Vector3.up * 2f, -Vector3.up, out RaycastHit hit, 5f, _TerrainAndWaterMask);
+                Physics.Raycast(item.transform.position + item.startPoint + Vector3.up * 2f, -Vector3.up, out RaycastHit hit, 5f, _TerrainWaterMask);
                 if (hit.collider != null)
                     item.startPoint = hit.point - item.transform.position;
                 else
@@ -813,11 +852,18 @@ public class GameManager : MonoBehaviour
             SetRandomWardrobe(WorldHandler._Instance._Player, WorldHandler._Instance._Player._IsMale);
         }
 
+        StartCoroutine(SpawnNpcCoroutine());
+    }
+    private IEnumerator SpawnNpcCoroutine()
+    {
+        Vector3 pos;
         NPC createdNpc;
-        Vector2Int chunk;
+        //Vector2Int chunk;
+
+        int waitCounter = 0;
         for (int i = 0; i < _NumberOfNpcs; i++)
         {
-            createdNpc = Instantiate(PrefabHolder._Instance._NpcParent).GetComponent<NPC>();
+            createdNpc = Instantiate(PrefabHolder._Instance._NpcParent, _NPCHolderTransform).GetComponent<NPC>();
             SetRandomNPCValues(createdNpc);
             pos = GetSpawnPosition(createdNpc);
             createdNpc.transform.position = pos;
@@ -826,19 +872,28 @@ public class GameManager : MonoBehaviour
             SetRandomDNA(createdNpc);
             SetRandomWardrobe(createdNpc, createdNpc._IsMale);
 
-            chunk = GetChunkFromPosition(pos);
-            if (AddressablesController._Instance._NpcListForChunk[chunk.x, chunk.y] == null)
-                AddressablesController._Instance._NpcListForChunk[chunk.x, chunk.y] = new List<GameObject>();
-            AddressablesController._Instance._NpcListForChunk[chunk.x, chunk.y].Add(createdNpc.gameObject);
+            createdNpc.SpawnNPCChild();
+            //chunk = GetChunkFromPosition(pos);
+            //if (AddressablesController._Instance._NpcListForChunk[chunk.x, chunk.y] == null)
+            //AddressablesController._Instance._NpcListForChunk[chunk.x, chunk.y] = new List<GameObject>();
+            //AddressablesController._Instance._NpcListForChunk[chunk.x, chunk.y].Add(createdNpc.gameObject);
+
+            if (++waitCounter == 7)
+            {
+                waitCounter = 0;
+                yield return null;
+            }
         }
+        NPCManager._IsReady = true;
     }
+
     private void SetRandomNPCValues(NPC npc)
     {
         //gender, name, characteristics, social class, location, religion and culture, group, family, past events, equipment and ownerships, current goals
     }
     private Vector3 GetSpawnPosition(NPC npc)
     {
-        Vector3 pos = _Player.transform.position + new Vector3(Random.Range(-1f, 1f), 0f, Random.Range(-1f, 1f)) * Random.Range(1f, 5f);//////////////
+        Vector3 pos = new Vector3(Random.Range(-1f, 1f), 0f, Random.Range(-1f, 1f)) * Random.Range(1f, 5f);//////////////
         pos.y = GetTerrainOrWaterHeightOnPosition(pos);
         return pos;
     }
@@ -853,6 +908,7 @@ public class GameManager : MonoBehaviour
         human._MuscleLevel = Random.Range(0.15f, 0.5f);
         human._FatLevel = Random.Range(0.15f, 0.75f);
         float headSize = 0.4f + (human._FatLevel * 0.5f + human._MuscleLevel) * 0.1f;
+        float breastSize = Random.Range(0.1f, 0.325f);
         float neckSize = (human._FatLevel / 2f) + (human._MuscleLevel / 2f);
         if (!human._IsMale) { headSize -= 0.04f; neckSize += 0.05f; }
 
@@ -869,6 +925,8 @@ public class GameManager : MonoBehaviour
                 if (!human._IsMale) value -= 0.1f;
                 human._Height = value;
             }
+            else if (dnaName == "breastSize")
+                value = breastSize;
             else if (dnaName == "headSize")
                 value = headSize;
             else if (dnaName == "neckThickness")
@@ -1090,7 +1148,7 @@ public class GameManager : MonoBehaviour
     }
     public bool IsInClosedSpace(Vector3 position)
     {
-        return Physics.Raycast(position, Vector3.up, 150f, LayerMask.GetMask("SolidObject"));
+        return Physics.Raycast(position, Vector3.up, 150f, _TerrainSolidMask);
     }
 
     public void OpenInGameMenuScreen()
@@ -1315,12 +1373,19 @@ public class GameManager : MonoBehaviour
         splitItem._IsSplittingBuffer = true;
         splitItem._Count = amount;
 
+        Inventory baseInv = slotUI._ItemRef._AttachedInventory;
+
         bool isProcessed = TakeOrSendCommon(splitItem, isBackCarry, slotUI._IsPlayerInventory, slotUI._IsBackCarryInventory);
         if (isProcessed)
         {
             slotUI._ItemRef._Count -= amount;
             if (slotUI._ItemRef._Count == 0)
                 slotUI._ItemRef.DropFrom(false);
+            else
+                slotUI._ItemRef.SetCurrentCarryCapacityUse(baseInv);
+
+            if (baseInv.IsInventoryVisibleInScreen())
+                UpdateInventoryUIBuffer();
         }
 
         _InventoryItemInteractPopup.SetActive(false);
@@ -1862,6 +1927,15 @@ public class GameManager : MonoBehaviour
                 return true;
         }
         return false;
+    }
+    public void UpdateMainReflectionProbe()
+    {
+        _mainReflectionProbeUpdateCounter += Time.deltaTime;
+        if (_mainReflectionProbeUpdateCounter < (IsInClosedSpace(_Player.transform.position) ? 2.5f : 15f))
+            return;
+
+        _mainReflectionProbeUpdateCounter = 0f;
+        _MainReflectionProbe.RenderProbe();
     }
     public void Slowtime(float time)
     {

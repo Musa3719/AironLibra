@@ -9,7 +9,7 @@ public class PlaySoundOnCollision : MonoBehaviour
     private float _pitch;
     private Rigidbody _rb;
     private float _collisionSpeed;
-    private float _lastTimeSoundPlayed;
+    private double _lastTimeSoundPlayed;
 
     private void Awake()
     {
@@ -38,10 +38,10 @@ public class PlaySoundOnCollision : MonoBehaviour
         if (GetComponent<Weapon>() != null)
             volume += Mathf.Clamp(_rb.linearVelocity.magnitude / 100f, 0f, 0.8f);
 
-        if (enabled && _lastTimeSoundPlayed + 0.15f < Time.time && _SoundClip != null && _collisionSpeed > 2f)
+        if (enabled && _lastTimeSoundPlayed + 0.15 < Time.timeAsDouble && _SoundClip != null && _collisionSpeed > 2f)
         {
             SoundManager._Instance.PlaySound(_SoundClip, transform.position, volume, false, _pitch + Random.Range(-0.1f, 0.1f));
-            _lastTimeSoundPlayed = Time.time;
+            _lastTimeSoundPlayed = Time.timeAsDouble;
         }
     }
 }

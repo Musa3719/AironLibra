@@ -35,8 +35,8 @@ public static class M_Input
     public static float GetCameraZoomInput()
     {
         float value = 0f;
-        if (Gamepad.current != null)
-            value += Gamepad.current.dpad.value.y / 10f;
+        if (Gamepad.current != null && Gamepad.current.rightStickButton.isPressed)
+            value += Gamepad.current.rightStick.value.y / 10f;
         if (Keyboard.current != null)
             value += Input.mouseScrollDelta.y;
         return value;
@@ -163,6 +163,8 @@ public static class M_Input
                 return Gamepad.current.buttonSouth.wasPressedThisFrame;
             case "Run":
                 return Gamepad.current.rightTrigger.wasPressedThisFrame;
+            case "Reload":
+                return Gamepad.current.dpad.down.wasPressedThisFrame;
             default:
                 Debug.LogError(buttonName + " : button name not found");
                 return false;

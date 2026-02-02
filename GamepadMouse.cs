@@ -4,6 +4,7 @@ using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
 using UnityEngine.UI;
+using UnityEngine.Windows;
 
 public class GamepadMouse : MonoBehaviour
 {
@@ -15,6 +16,9 @@ public class GamepadMouse : MonoBehaviour
     private Vector2 _moveInput;
     private float _activeSpeed;
     private Coroutine _pressedCoroutine;
+    private RaycastHit _raycastToWorld;
+
+    public Vector2 _PosForRangedAim { get; set; }
 
     public List<RectTransform> _RectTransformTargets { get; private set; }
     private List<InventorySlotUI> _inventorySlotUIs;
@@ -39,9 +43,11 @@ public class GamepadMouse : MonoBehaviour
     }
     void Update()
     {
-        if (Gamepad.current == null) return;
+        if (Gamepad.current == null || !_CursorRect.gameObject.activeInHierarchy) return;
 
         _moveInput = Gamepad.current.leftStick.ReadValue();
+        if (_moveInput.magnitude < 0.15f)
+            _moveInput = Vector2.zero;
 
         _activeSpeed = Mathf.Lerp(_activeSpeed, _cursorSpeed * (_moveInput.magnitude < 0.02f ? 0f : (Gamepad.current.rightTrigger.isPressed ? 1.75f : 1f)), Time.unscaledDeltaTime * 8f);
         Vector2 newPosition = _cursorRectTransform.anchoredPosition + _moveInput * _activeSpeed * Time.unscaledDeltaTime;
@@ -217,7 +223,7 @@ public class GamepadMouse : MonoBehaviour
             float dot = Vector2.Dot(diff.normalized, dir);
             if (dot <= 0.01f) continue;
 
-            float anglePenalty = 1f - dot; 
+            float anglePenalty = 1f - dot;
 
             float verticalPenalty = Mathf.Abs(Vector2.Perpendicular(dir).x * diff.x + Vector2.Perpendicular(dir).y * diff.y);
 
@@ -261,5 +267,35 @@ public class GamepadMouse : MonoBehaviour
             out localPoint
         );
         return localPoint;
+    }
+
+    public Vector3 GetRangedAimPoint(bool isArrangingPos)
+    {
+        if (isArrangingPos)
+        {
+            Vector2 input = Gamepad.current.rightStick.ReadValue();
+            if (input.magnitude < 0.15f)
+                input = Vector2.zero;
+            _PosForRangedAim += input * 1000f * Time.deltaTime;
+        }
+
+        float halfW = Screen.width * 0.48f;
+        float halfH = Screen.height * 0.48f;
+        _PosForRangedAim = new Vector2(Mathf.Clamp(_PosForRangedAim.x, -halfW, halfW), Mathf.Clamp(_PosForRangedAim.y, -halfH, halfH)); 
+
+        Vector2 screenCenter = new Vector2(halfW, halfH);
+        Vector2 screenPos = screenCenter + _PosForRangedAim;
+        Ray ray = Camera.main.ScreenPointToRay(screenPos);
+
+        if (Physics.Raycast(ray, out _raycastToWorld, 1000f, GameManager._Instance._TerrainSolidWaterHumanMask, QueryTriggerInteraction.Collide) && _raycastToWorld.collider != null)
+        {
+            return _raycastToWorld.point;
+        }
+        _raycastToWorld = default;
+        return Vector3.zero;
+    }
+    public Vector3 GetRangedAimNormal()
+    {
+        return _raycastToWorld.normal;
     }
 }
