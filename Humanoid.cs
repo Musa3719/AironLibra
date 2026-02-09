@@ -1,0 +1,884 @@
+using FIMSpace;
+using FischlWorks;
+using System.Collections;
+using System.Collections.Generic;
+using UMA;
+using UMA.CharacterSystem;
+using UMA.Dynamics;
+using UnityEngine;
+
+public abstract class Humanoid : MonoBehaviour, ICanGetHurt
+{
+    public Transform _Transform { get; private set; }
+    public Animator _Animator { get { if (_animator == null) { _animator = _LocomotionSystem.GetComponentInChildren<Animator>(); _animator.updateMode = AnimatorUpdateMode.Fixed; _animator.cullingMode = AnimatorCullingMode.CullCompletely; } return _animator; } }
+    private Animator _animator;
+    public EntityPhysicObject _EntityPhysicObject { get; private set; }
+    public CapsuleCollider _MainCollider { get; protected set; }
+    public LocomotionSystem _LocomotionSystem { get; protected set; }
+    public csHomebrewIK _FootIKComponent { get; protected set; }
+    public LeaningAnimator _LeaninganimatorComponent { get; protected set; }
+    public SkinnedMeshRenderer _SkinnedMeshRenderer { get { if (_skinnedMeshRenderer == null) _skinnedMeshRenderer = _UmaDynamicAvatar?.transform.Find("UMARenderer")?.GetComponent<SkinnedMeshRenderer>(); return _skinnedMeshRenderer; } }
+    private SkinnedMeshRenderer _skinnedMeshRenderer;
+    public UMA.PoseTools.ExpressionPlayer _ExpressionPlayer { get; protected set; }
+    public TwistBones _TwistBones { get; protected set; }
+    public UMA.Dynamics.UMAPhysicsAvatar _RagdollAvatar { get { if (_ragdollAvatar == null) _ragdollAvatar = _UmaDynamicAvatar.GetComponent<UMA.Dynamics.UMAPhysicsAvatar>(); return _ragdollAvatar; } }
+    private UMA.Dynamics.UMAPhysicsAvatar _ragdollAvatar;
+    public DynamicCharacterAvatar _UmaDynamicAvatar { get; protected set; }
+    public Dictionary<string, DnaSetter> _DNA { get; private set; }
+    public Dictionary<string, float> _DnaData { get; set; }
+    public List<UMATextRecipe> _WardrobeData { get; set; }
+    public Dictionary<string, Color> _CharacterColors { get; set; }
+
+    //Systems
+    public string _Name { get; protected set; }
+    public bool _IsMale { get; set; }
+    public Class _Class { get; protected set; }
+    public Family _Family { get; protected set; }
+    public Group _AttachedGroup { get; protected set; }//not instance, a referance
+    public InventoryHolder _InventoryHolder { get; protected set; }
+    public Inventory _Inventory => _InventoryHolder._Inventory;
+    public HealthSystem _HealthSystem { get; protected set; }
+    public MovementState _MovementState { get; protected set; }
+    public HandState _HandState { get; protected set; }
+
+    public float _MuscleLevel { get; set; }
+    public float _FatLevel { get; set; }
+    public float _Height { get; set; }
+    public float _HumanCarryCapacity => _MuscleLevel * 80f + _FatLevel * 20f + _Height * 40f;
+    public float _NeedSleepAmount { get => _needSleepAmount; set => _needSleepAmount = Mathf.Clamp(value, 0f, 99f); }
+    private float _needSleepAmount;
+    public float _NeedCleaningAmount { get => _needCleaningAmount; set => _needCleaningAmount = Mathf.Clamp(value, 0f, 99f); }
+    private float _needCleaningAmount;
+    public float _NeedEatAmount { get => _needEatAmount; set => _needEatAmount = Mathf.Clamp(value, 0f, 99f); }
+    private float _needEatAmount;
+    public float _NeedDrinkAmount { get => _needDrinkAmount; set => _needDrinkAmount = Mathf.Clamp(value, 0f, 99f); }
+    private float _needDrinkAmount;
+    public float _NeedPissingAmount { get => _needPissingAmount; set => _needPissingAmount = Mathf.Clamp(value, 0f, 99f); }
+    private float _needPissingAmount;
+    public float _NeedPoopingAmount { get => _needPoopingAmount; set => _needPoopingAmount = Mathf.Clamp(value, 0f, 99f); }
+    private float _needPoopingAmount;
+    public float _MaxStamina { get; set; }
+    public float _Stamina { get => _stamina; set { _stamina = Mathf.Clamp(value, 0f, _MaxStamina); } }
+    private float _stamina;
+    public double _WaitForRunLastTriggerTime { get; set; }
+
+    //public Characteristic _Characteristic { get; private set; }
+
+    public Transform _BackpackTransform { get; private set; }
+    public float _DefaultMeleeWeaponDamage => 25f;
+    public Transform _RightHandHolderTransform { get; private set; }
+    public Transform _LeftHandHolderTransform { get; private set; }
+    public Transform _RightWeaponHolder { get; private set; }
+    public Transform _LeftWeaponHolder { get; private set; }
+
+    public MeleeWeapon _RightHandPunch { get; private set; }
+    public MeleeWeapon _LeftHandPunch { get; private set; }
+    public MeleeWeapon _RightKick { get; private set; }
+    public MeleeWeapon _LeftKick { get; private set; }
+
+    #region Equippables
+    public Item _RightHandEquippedItemRef;
+    public Item _LeftHandEquippedItemRef;
+    public Item _BackCarryItemRef;
+    public Item _HeadGearItemRef { get { return _headGear; } set { _headGear = value; } }
+    private Item _headGear;
+    public Item _GlovesItemRef { get { return _gloves; } set { _gloves = value; } }
+    private Item _gloves;
+    public Item _ClothingItemRef { get { return _clothing; } set { _clothing = value; } }
+    private Item _clothing;
+    public ArmorItem _ChestArmorItemRef { get { return _chestArmor; } set { _chestArmor = value; } }
+    private ArmorItem _chestArmor;
+    public ArmorItem _LegsArmorItemRef { get { return _legsArmor; } set { _legsArmor = value; } }
+    private ArmorItem _legsArmor;
+    public Item _BootsItemRef { get { return _boots; } set { _boots = value; } }
+    private Item _boots;
+    #endregion
+
+    public float _SizeMultiplier { get; private set; }
+    public virtual Vector2 _DirectionInput { get; }
+    public float _SlopeSpeedAdder { get; set; }
+    public float _JumpStartSpeed { get; set; }
+    public bool _IsInFastWalkMode { get; set; }
+    public bool _SprintInput { get; set; }
+    public bool _IsInCombatMode { get; set; }
+    public bool _CrouchInput { get; set; }
+    public bool _JumpInput { get; set; }
+    public bool _InteractInput { get; set; }
+    public bool _LightAttackInput { get; set; }
+    public bool _HeavyAttackInput { get; set; }
+    public bool _KickInput { get; set; }
+    public bool _DodgeInput { get; set; }
+    public bool _BlockInput { get; set; }
+    public bool _AimInput { get; set; }
+    public bool _ReloadInput { get; set; }
+    public bool _ParryInput { get; set; }
+    public bool _AimInputForThrowInput { get; set; }
+    public Vector3 _AimPosition { get; set; }
+
+
+    public float _AttackReadyTime { get; set; }
+    public float _WaitTimeForNextAttack { get; set; }
+    public string _LastReadyAnimName { get; set; }
+    public float _AttackReadySpeed { get; set; }
+    public float _HeavyAttackThreshold => 0.4f;
+    public float _HeavyAttackMultiplier => _AttackReadyTime < _HeavyAttackThreshold ? 1f : _AttackReadyTime / 2f + 1f;
+    public bool _IsHandsEmpty => _RightHandEquippedItemRef == null && _LeftHandEquippedItemRef == null;
+    public AttackDirectionFrom _LastAttackDirectionFrom { get; set; }
+    public bool _IsAttackingFromLeftHandWeapon { get; set; }
+    public Weapon _LastAttackWeapon { get; set; }
+
+    public float _CarryCapacityRate => _Inventory._CarryCapacityUse / _HumanCarryCapacity;
+    public bool _IsOverCarryCapacity => _CarryCapacityRate > 1f;
+    public bool _IsReloading => _HandState is RangedWeaponHandState state && state._IsReloading;
+    public bool _IsDodging { get; set; }
+    public bool _IsBlocking { get; set; }
+    public bool _IsInRangedAim { get; set; }
+    public bool _IsAttacking { get; set; }
+    public bool _IsInAttackReady { get; set; }
+    public bool _IsStaggered { get; set; }
+    public bool _IsStrafing { get; set; }
+    public bool _IsJumping { get; set; }
+    public bool _IsGrounded { get; set; }
+    public bool _IsSprinting { get; set; }
+    public bool _StopMove { get; set; }
+
+    private Transform _headTransform;
+
+    [HideInInspector] public float _JumpTimer = 0.25f;
+    [HideInInspector] public float _JumpCounter;
+    public float _AimSpeed { get { if (_MovementState is CrouchMoveState) return 3f; else if (_MovementState is ProneMoveState) return 1.25f; else return 5f; } }
+    public double _LastTimeRotated { get; set; }
+    public double _LastTimeAttacked { get; set; }
+    public double _LastAttackReadyTime { get; set; }
+    public double _LastTimeDodged { get; set; }
+    public double _LastTimeTriedParry { get; set; }
+
+    public RaycastHit _RayForLook;
+    public Coroutine _RotateAroundCoroutine;
+
+    public Coroutine _DodgeMoveCoroutine;
+    public Coroutine _AttackMoveCoroutine;
+    public Coroutine _StaggerCoroutine;
+    public bool _IsInClosedSpace { get; private set; }
+
+    private float _walkSoundCounter;
+    private bool _umaWaitingForCompletion;
+
+    private float _checkForClosedSpaceCounter;
+    private float _lastAlphaForSnow;
+    private float _targetAlphaForSnow;
+    private float _checkForSnowCounter;
+    private float _checkForSnowThreshold = 1f;
+
+    private Coroutine _rightHandWeaponTransformCoroutine;
+    private Coroutine _leftHandWeaponTransformCoroutine;
+
+    protected virtual void Awake()
+    {
+        _Transform = transform;
+        _InventoryHolder = GetComponent<InventoryHolder>();
+        _EntityPhysicObject = GetComponent<EntityPhysicObject>();
+        _HealthSystem = new HealthSystem();
+        _HealthSystem.Init(this);
+
+        Random.InitState(System.DateTime.Now.Millisecond + GetInstanceID());
+        _checkForClosedSpaceCounter = Random.Range(0f, 0.5f);
+        _checkForSnowCounter = Random.Range(0f, _checkForSnowThreshold);
+        _WaitForRunLastTriggerTime = -2f;
+        _LocomotionSystem = GetComponentInChildren<LocomotionSystem>();
+        _FootIKComponent = _LocomotionSystem.GetComponentInChildren<csHomebrewIK>();
+        _LeaninganimatorComponent = _LocomotionSystem.GetComponentInChildren<LeaningAnimator>();
+        _UmaDynamicAvatar = _Transform.Find("char").GetComponent<DynamicCharacterAvatar>();
+        _ExpressionPlayer = _UmaDynamicAvatar.GetComponent<UMA.PoseTools.ExpressionPlayer>();
+        _TwistBones = _UmaDynamicAvatar.GetComponent<TwistBones>();
+        _ragdollAvatar = _UmaDynamicAvatar.GetComponent<UMA.Dynamics.UMAPhysicsAvatar>();
+        SetGender(_IsMale);
+        InitOrLoadUmaCharacter();
+        _BackpackTransform = _Transform.Find("char/Root/Global/Position/Hips/LowerBack/Spine/Spine1/BackpackTransform");
+        _RightHandHolderTransform = _Transform.Find("char/Root/Global/Position/Hips/LowerBack/Spine/Spine1/RightShoulder/RightArm/RightForeArm/RightHand/RightHolder/RMovable");
+        _LeftHandHolderTransform = _Transform.Find("char/Root/Global/Position/Hips/LowerBack/Spine/Spine1/LeftShoulder/LeftArm/LeftForeArm/LeftHand/LeftHolder/LMovable");
+        _LeftHandHolderTransform.localEulerAngles = new Vector3(180f, 0f, 0f);
+        _RightWeaponHolder = _Transform.Find("char/Root/Global/Position/Hips/LowerBack/RightWeaponHolder/RWMovable");
+        _LeftWeaponHolder = _Transform.Find("char/Root/Global/Position/Hips/LowerBack/LeftWeaponHolder/LWMovable");
+        _RightHandPunch = _Transform.Find("char/Root/Global/Position/Hips/LowerBack/Spine/Spine1/RightShoulder/RightArm/RightForeArm/RightHand/RightPunch").GetComponent<MeleeWeapon>();
+        _LeftHandPunch = _Transform.Find("char/Root/Global/Position/Hips/LowerBack/Spine/Spine1/LeftShoulder/LeftArm/LeftForeArm/LeftHand/LeftPunch").GetComponent<MeleeWeapon>();
+        _RightKick = _Transform.Find("char/Root/Global/Position/Hips/RightUpLeg/RightLeg/RightFoot/RightKick").GetComponent<MeleeWeapon>();
+        _LeftKick = _Transform.Find("char/Root/Global/Position/Hips/LeftUpLeg/LeftLeg/LeftFoot/LeftKick").GetComponent<MeleeWeapon>();
+    }
+    protected virtual void Start()
+    {
+        _LocomotionSystem.Init(this);
+        ArrangeStartingStates();
+    }
+
+    public void FrameUpdateHuman()
+    {
+        if (GameManager._Instance._IsGameStopped) return;
+        _HealthSystem.Update();
+
+        if (_UmaDynamicAvatar != null)
+        {
+            ArrangeStamina();
+            ArrangeIsInClosedSpace();
+            _MovementState.DoState();
+            _HandState.DoState();
+            ArrangeExtraGravity();
+            if (_UmaDynamicAvatar.BuildCharacterEnabled)
+            {
+                ArrangePlaneSound();
+                ArrangeSnowLayer();
+            }
+        }
+
+        if (_umaWaitingForCompletion && _Animator.avatar != null)
+            UmaFirstUpdateCompleted();
+    }
+    public Vector3 GetVelocity()
+    {
+        return _EntityPhysicObject.GetVelocity();
+    }
+    public void SetVelocity(Vector3 vel, bool isSettingY)
+    {
+        _EntityPhysicObject.SetVelocity(vel, isSettingY);
+    }
+    public void SetPosition(Vector3 pos, bool isInitialFrame)
+    {
+        StartCoroutine(SetPositionCoroutine(pos, isInitialFrame));
+    }
+    private IEnumerator SetPositionCoroutine(Vector3 pos, bool isInitialFrame)
+    {
+        if (isInitialFrame)
+            yield return null;
+        _Transform.position = pos;
+        _EntityPhysicObject.SetPosition();
+    }
+    public void SetGravity(float gravity)
+    {
+        _EntityPhysicObject.SetGravity(gravity);
+    }
+    public void OpenOrCloseMainPhysics(bool value)
+    {
+        if (value)
+            _EntityPhysicObject.Enable();
+        else
+            _EntityPhysicObject.Disable();
+    }
+    /*private void OnAnimatorMove()
+    {
+        ControlAnimatorRootMotion();
+    }*/
+    private void InitOrLoadUmaCharacter()
+    {
+        _UmaDynamicAvatar.CharacterCreated.AddListener((a) => UmaCreated());
+        //_UmaDynamicAvatar.CharacterUpdated.AddListener((a) => UmaUpdated());
+    }
+    public void UmaCreated()
+    {
+        _UmaDynamicAvatar.BuildCharacterEnabled = false;
+
+        _headTransform = _UmaDynamicAvatar.transform.Find("Root").Find("Global").Find("Position").Find("Hips").Find("LowerBack").Find("Spine").Find("Spine1").Find("Neck").Find("Head");
+        SetDna(true);
+        SetWardrobe();
+        UmaFirstUpdated();
+
+        if (_RightHandEquippedItemRef != null && _UmaDynamicAvatar != null && _UmaDynamicAvatar.BuildCharacterEnabled)
+            _RightHandEquippedItemRef.SpawnHandItem();
+        if (_LeftHandEquippedItemRef != null && _UmaDynamicAvatar != null && _UmaDynamicAvatar.BuildCharacterEnabled)
+            _LeftHandEquippedItemRef.SpawnHandItem();
+        if (_BackCarryItemRef != null && _UmaDynamicAvatar != null && _UmaDynamicAvatar.BuildCharacterEnabled)
+            _BackCarryItemRef.SpawnBackCarryItem();
+    }
+    public void UmaFirstUpdated()
+    {
+        _umaWaitingForCompletion = true;
+    }
+    private void UmaFirstUpdateCompleted()
+    {
+        if (_headTransform == null) return;
+
+        _umaWaitingForCompletion = false;
+        _SizeMultiplier = (_headTransform.position.y - _Transform.position.y) / 1.77f;
+        if (GetComponentInChildren<csHomebrewIK>() != null)
+            GetComponentInChildren<csHomebrewIK>().StartForUma();
+        _UmaDynamicAvatar.BuildCharacterEnabled = true;
+        GameManager._Instance.CallForAction(() =>
+        {
+            _animator = _LocomotionSystem.GetComponentInChildren<Animator>(); _animator.updateMode = AnimatorUpdateMode.Fixed; _animator.cullingMode = AnimatorCullingMode.CullCompletely;
+            //float height = GetDnaValueByName("height");
+            //_animator.speed = height <= 0.5f ? 0.77f + (0.9f - 0.77f) * (height / 0.5f) : 0.9f + (1.25f - 0.9f) * ((height - 0.5f) / 0.5f);
+        }, 0.1f);
+    }
+
+    public void ActivateCombatMode()
+    {
+        if (CameraController._Instance._IsInCoolAngleMode) return;
+        if (_IsInCombatMode) return;
+
+        bool conditions = _MovementState is LocomotionState;
+        if (!conditions) return;
+
+        _IsInFastWalkMode = false;
+        _IsInCombatMode = true;
+        if (_RightHandEquippedItemRef != null)
+            GameManager._Instance.CoroutineCall(ref _rightHandWeaponTransformCoroutine, HandWeaponTransformCoroutine(true, true), this);
+        if (_LeftHandEquippedItemRef != null)
+            GameManager._Instance.CoroutineCall(ref _leftHandWeaponTransformCoroutine, HandWeaponTransformCoroutine(true, false), this);
+    }
+    public void DisableCombatMode()
+    {
+        if (!_IsInCombatMode) return;
+
+        bool conditions = _MovementState is LocomotionState;
+        if (!conditions) return;
+
+        _IsInCombatMode = false;
+        if (_RightHandEquippedItemRef != null)
+            GameManager._Instance.CoroutineCall(ref _rightHandWeaponTransformCoroutine, HandWeaponTransformCoroutine(false, true), this);
+        if (_LeftHandEquippedItemRef != null)
+            GameManager._Instance.CoroutineCall(ref _leftHandWeaponTransformCoroutine, HandWeaponTransformCoroutine(false, false), this);
+    }
+    public void StopCombatActions()
+    {
+        _IsBlocking = false;
+        _IsInRangedAim = false;
+        //stop attacks
+    }
+    private IEnumerator HandWeaponTransformCoroutine(bool isToHand, bool isRight)
+    {
+        float timer = 0;
+        float firstThreshold = isToHand ? 0.2f : 0.5f;
+        float secondThreshold = isToHand ? 0.3f : 0.6f;
+
+        var handle = ((isRight ? _RightHandEquippedItemRef : _LeftHandEquippedItemRef) as WeaponItem)._SpawnedHandle;
+        while (!(handle.HasValue && handle.Value.IsValid() && handle.Value.IsDone && handle.Value.Result != null))
+        {
+            if (timer > 1f)
+            {
+                Debug.LogError("adressable did not load weapon!");
+                yield break;
+            }
+            timer += Time.deltaTime;
+            yield return null;
+        }
+
+        if ((isRight ? _RightHandEquippedItemRef : _LeftHandEquippedItemRef) == null)
+            yield break;
+
+        timer = 0;
+        Transform beforeParentTransform = isToHand ? (isRight ? _RightWeaponHolder : _LeftWeaponHolder) : (isRight ? _RightHandHolderTransform : _LeftHandHolderTransform);
+        if (!handle.HasValue) yield break;
+        Transform weaponTransform = ((isRight ? _RightHandEquippedItemRef : _LeftHandEquippedItemRef) as WeaponItem)._SpawnedHandle.Value.Result.transform;
+        if (weaponTransform == null) yield break;
+        weaponTransform.SetParent(beforeParentTransform, true);
+        //weaponTransform.localPosition = Vector3.zero;
+        //weaponTransform.localEulerAngles = Vector3.zero;
+        ChangeAnimation(isToHand ? (isRight ? "RightTakeFromHolder" : "LeftTakeFromHolder") : (isRight ? "RightToHolder" : "LeftToHolder"));
+
+        while (timer < firstThreshold)
+        {
+            timer += Time.deltaTime;
+            yield return null;
+        }
+
+        if ((isRight ? _RightHandEquippedItemRef : _LeftHandEquippedItemRef) == null || weaponTransform == null)
+            yield break;
+
+        Transform targetParentTransform = isToHand ? (isRight ? _RightHandHolderTransform : _LeftHandHolderTransform) : (isRight ? _RightWeaponHolder : _LeftWeaponHolder);
+        weaponTransform.SetParent(targetParentTransform, true);
+        ICanBeEquippedForDefinition iCanBeEquippedForDefinition = ((isRight ? _RightHandEquippedItemRef : _LeftHandEquippedItemRef)._ItemDefinition as ICanBeEquippedForDefinition);
+        Vector3 targetPos = isToHand ? iCanBeEquippedForDefinition._PosOffset : iCanBeEquippedForDefinition._DefPosOffset;
+        Vector3 targetAngles = isToHand ? iCanBeEquippedForDefinition._AnglesOffset : iCanBeEquippedForDefinition._DefAnglesOffset;
+        Quaternion targetQuaternion = Quaternion.Euler(targetAngles);
+
+        while (timer < secondThreshold)
+        {
+            if (weaponTransform == null)
+                yield break;
+            weaponTransform.localPosition = Vector3.Lerp(weaponTransform.localPosition, targetPos, Time.deltaTime * 12f);
+            weaponTransform.localRotation = Quaternion.Lerp(weaponTransform.localRotation, targetQuaternion, Time.deltaTime * 8f);
+            timer += Time.deltaTime;
+            yield return null;
+        }
+        if (weaponTransform == null)
+            yield break;
+        weaponTransform.localPosition = targetPos;
+        weaponTransform.localRotation = targetQuaternion;
+    }
+
+    public UMATextRecipe GetRecipeFromItemName(string itemName) => UMAAssetIndexer.Instance.GetRecipe("ChestArmor1_M_Recipe");//UMAAssetIndexer.Instance.GetRecipe(_IsMale ? itemName + "_M_Recipe" : itemName + "_F_Recipe");
+    public void WearWardrobe(UMATextRecipe recipe, bool isRefresh = false)
+    {
+        if (!isRefresh)
+        {
+            if (_WardrobeData.Contains(recipe)) return;
+
+            UMATextRecipe tempRecipe;
+            for (int i = 0; i < _WardrobeData.Count; i++)
+            {
+                tempRecipe = _WardrobeData[i];
+                if (recipe.wardrobeSlot == tempRecipe.wardrobeSlot)
+                {
+                    Debug.LogError("Wardrobe slot is equipped!");
+                    return;
+                }
+            }
+
+            _WardrobeData.Add(recipe);
+        }
+
+        if (_UmaDynamicAvatar == null) return;
+
+        _UmaDynamicAvatar.SetSlot(recipe);
+
+        if (_UmaDynamicAvatar.BuildCharacterEnabled)
+        {
+            _UmaDynamicAvatar.BuildCharacterEnabled = false;
+            _UmaDynamicAvatar.BuildCharacterEnabled = true;
+        }
+    }
+    public void RemoveWardrobe(UMATextRecipe recipe)
+    {
+        if (!_WardrobeData.Contains(recipe)) return;
+
+        string removedSlot = recipe.wardrobeSlot;
+        _WardrobeData.Remove(recipe);
+
+        if (_UmaDynamicAvatar == null) return;
+
+        _UmaDynamicAvatar.ClearSlot(removedSlot);
+
+        /*for (int i = 0; i < _WardrobeData.Count; i++)
+        {
+            recipe = _WardrobeData[i];
+            if (recipe.wardrobeSlot == removedSlot)
+            {
+                //_UmaDynamicAvatar.SetSlot(recipe);
+                Debug.LogError("Still Has Wardrobe Slot!");
+                break;
+            }
+        }*/
+
+        if (_UmaDynamicAvatar.BuildCharacterEnabled)
+        {
+            _UmaDynamicAvatar.BuildCharacterEnabled = false;
+            _UmaDynamicAvatar.BuildCharacterEnabled = true;
+        }
+    }
+    public void SetGender(bool isMale)
+    {
+        if (_UmaDynamicAvatar == null) return;
+
+        if (isMale)
+        {
+            _UmaDynamicAvatar.ChangeRace("HumanMale", DynamicCharacterAvatar.ChangeRaceOptions.none);
+            _UmaDynamicAvatar.GetComponent<UMA.PoseTools.ExpressionPlayer>().overrideMecanimJaw = false;
+        }
+        else
+        {
+            _UmaDynamicAvatar.ChangeRace("HumanFemaleHighPoly", DynamicCharacterAvatar.ChangeRaceOptions.none);
+            _UmaDynamicAvatar.GetComponent<UMA.PoseTools.ExpressionPlayer>().overrideMecanimJaw = true;
+        }
+
+        (_UmaDynamicAvatar.GetComponent<UMA.PoseTools.ExpressionPlayer>() as UMA.PoseTools.UMAExpressionPlayer).InstantBlink();
+    }
+    public void ChangeColor(string colorName, Color newColor)
+    {
+        if (_UmaDynamicAvatar == null) return;
+
+        _UmaDynamicAvatar.SetColorValue(colorName, newColor);
+
+        /*if (avatar.BuildCharacterEnabled)
+        {
+            avatar.BuildCharacterEnabled = false;
+            avatar.BuildCharacterEnabled = true;
+        }*/
+    }
+    public float GetDnaValueByName(string dnaName)
+    {
+        if (_UmaDynamicAvatar == null) return -1f;
+
+        var values = _UmaDynamicAvatar.GetDNAValues();
+        if (values.ContainsKey(dnaName))
+            return values[dnaName];
+        return -1f;
+    }
+    public void ChangeMuscleAmount(bool isIncreasing, int amount = 1, bool isRebuilding = true)
+    {
+        float newAmount = _MuscleLevel;
+        if (isIncreasing)
+            newAmount += 0.025f * amount;
+        else
+            newAmount -= 0.025f * amount;
+        newAmount = Mathf.Clamp(newAmount, 0.15f, 0.75f);
+        _MuscleLevel = newAmount;
+
+        SetLevelsToAvatar();
+    }
+    public void ChangeFatAmount(bool isIncreasing, int amount = 1, bool isRebuilding = true)
+    {
+        float newAmount = _FatLevel;
+        if (isIncreasing)
+            newAmount += 0.025f * amount;
+        else
+            newAmount -= 0.025f * amount;
+        newAmount = Mathf.Clamp(newAmount, 0.15f, 0.75f);
+        _FatLevel = newAmount;
+
+        SetLevelsToAvatar();
+    }
+    public void SetLevelsToAvatar()
+    {
+        _DnaData["armWidth"] = _MuscleLevel;
+        _DnaData["forearmWidth"] = _MuscleLevel;
+        _DnaData["upperMuscle"] = _MuscleLevel;
+        _DnaData["lowerMuscle"] = _MuscleLevel;
+
+        if (_IsMale)
+            _DnaData["bodyFitness"] = _MuscleLevel;
+
+        _DnaData["upperWeight"] = _MuscleLevel;
+        _DnaData["lowerWeight"] = _MuscleLevel;
+        _DnaData["belly"] = _MuscleLevel;
+        _DnaData["lowerMuscle"] = _MuscleLevel;
+    }
+
+
+    public void SetDna(bool isRebuilding)
+    {
+        if (_DnaData == null || _UmaDynamicAvatar == null) return;
+
+
+        _DNA = _UmaDynamicAvatar.GetDNA();
+        foreach (var item in _DNA.Keys)
+        {
+            if (_DnaData.ContainsKey(item))
+                _DNA[item].Set(_DnaData[item]);
+        }
+
+        if (isRebuilding && _UmaDynamicAvatar.BuildCharacterEnabled)
+        {
+            _UmaDynamicAvatar.BuildCharacterEnabled = false;
+            _UmaDynamicAvatar.BuildCharacterEnabled = true;
+        }
+    }
+    protected void SetWardrobe()
+    {
+        if (_WardrobeData == null || _UmaDynamicAvatar == null) return;
+
+        _UmaDynamicAvatar.ClearSlots();
+        foreach (var wardrobe in _WardrobeData)
+        {
+            WearWardrobe(wardrobe, true);
+        }
+    }
+    private void ArrangeIsInClosedSpace()
+    {
+        if (_checkForClosedSpaceCounter > 0.5f)
+        {
+            _checkForClosedSpaceCounter = 0f;
+
+            if (GameManager._Instance.IsInClosedSpace(_Transform.position))
+                _IsInClosedSpace = true;
+            else
+                _IsInClosedSpace = false;
+        }
+        else
+            _checkForClosedSpaceCounter += Time.deltaTime;
+    }
+    private void ArrangeExtraGravity()
+    {
+        if (_IsGrounded)
+            _LocomotionSystem.extraGravity = 0f;
+        else
+            _LocomotionSystem.extraGravity = -8f;
+    }
+    private void ArrangeSnowLayer()
+    {
+        if (_UmaDynamicAvatar == null || _SkinnedMeshRenderer == null) return;
+
+        if (Gaia.ProceduralWorldsGlobalWeather.Instance.IsSnowing && !_IsInClosedSpace) // && _Rigidbody.linearVelocity.magnitude <= 2f)
+            _targetAlphaForSnow = 1f;
+        else
+            _targetAlphaForSnow = 0f;
+
+        /*if (_lastAlphaForSnow > 0.4f && _Rigidbody.linearVelocity.magnitude > 2f)
+        {
+            _lastAlphaForSnow = 0f;
+            _targetAlphaForSnow = 0f;
+            Destroy(Instantiate(PrefabHolder._Instance._SnowFallsVFX, _Transform.position + Vector3.up, Quaternion.identity), 2f);
+        }*/
+
+        _checkForSnowCounter += Time.deltaTime;
+        if (_checkForSnowCounter < _checkForSnowThreshold) return;
+        _checkForSnowCounter = 0f;
+
+        if (_lastAlphaForSnow != _targetAlphaForSnow)
+        {
+            _lastAlphaForSnow = Mathf.MoveTowards(_lastAlphaForSnow, _targetAlphaForSnow, 0.05f);
+            Material[] mats = _SkinnedMeshRenderer.sharedMaterials;
+            for (int i = 0; i < mats.Length; i++)
+            {
+                if (!mats[i].shader.name.StartsWith("Shader Graphs/PW_")) continue;
+
+                mats[i].SetColor("_PW_CoverLayer1Color", new Color(1f, 1f, 1f, _lastAlphaForSnow));
+            }
+        }
+    }
+    /*public void ControlAnimatorRootMotion()
+    {
+        if (!this.enabled) return;
+
+        if (_LocomotionSystem.inputSmooth == Vector3.zero)
+        {
+            SetPosition(_Animator.rootPosition);
+            _Transform.rotation = _Animator.rootRotation;
+        }
+    }*/
+
+    private void ArrangeStartingStates()
+    {
+        //arrange 2 states, health system and inventory from saves or create it
+
+        EnterState(new LocomotionState(this));//get from save
+        EnterState(new EmptyHandsState(this));//get from save
+
+        //Arrange Max Speed
+        float maxSpeedMultiplier = 1f;//get dexterity, exhaust level, % carry weight, health system
+        _LocomotionSystem.AnimatorMaxSpeedMultiplier = maxSpeedMultiplier;
+        //LocomotionSystem.FreeMovementSetting.sprintSpeed = 5.5f * maxSpeedMultiplier;
+
+        //Arrange Stamina
+        float maxStamina = 220f;//get exhaust level, str and health system
+        _MaxStamina = maxStamina;
+        _Stamina = maxStamina;
+
+        //Arrange
+    }
+    public IEnumerator Staggering(float second)
+    {
+        float timer = 0;
+        while (timer < second)
+        {
+            timer += Time.deltaTime;
+            yield return null;
+        }
+        _IsStaggered = false;
+        ChangeAnimation("EmptyArms", 0.1f);
+    }
+    public IEnumerator Dodging()
+    {
+        float timer = 0;
+        while (timer < 0.25f)
+        {
+            Vector3 targetVel = Vector3.ProjectOnPlane(new Vector3(0f, GetVelocity().y, 0f), _LocomotionSystem.groundHit.normal);
+            SetVelocity(Vector3.Lerp(GetVelocity(), targetVel, Time.deltaTime * 1.4f), true);
+            timer += Time.deltaTime;
+            yield return null;
+        }
+        _FootIKComponent.SetTargetWeight(1f);
+        _IsDodging = false;
+    }
+    public IEnumerator AttackMoving()
+    {
+        float timer = 0;
+        while (timer < 0.5f)
+        {
+            Vector3 targetVel = Vector3.ProjectOnPlane(new Vector3(0f, GetVelocity().y, 0f), _LocomotionSystem.groundHit.normal);
+            SetVelocity(Vector3.Lerp(GetVelocity(), targetVel, Time.deltaTime * 1.6f), true);
+            timer += Time.deltaTime;
+            yield return null;
+        }
+        _FootIKComponent.SetTargetWeight(1f);
+    }
+    public void ChangeAnimation(string name, float fadeTime = 0.2f, float attackSpeedMultiplier = 1f, int layer = -1)
+    {
+        _Animator.SetFloat(AnimatorParameters.AttackSpeedMultiplier, attackSpeedMultiplier);
+        _Animator.CrossFadeInFixedTime(name, fadeTime, layer);
+    }
+    public void ChangeAnimationWithOffset(string name, float normalizedTimeOffset, float fadeTime, float attackSpeedMultiplier = 1f, int layer = -1)
+    {
+        _Animator.CrossFadeInFixedTime(name, fadeTime, layer, normalizedTimeOffset);
+    }
+    public void EnterState(MovementState newState)
+    {
+        if (_MovementState != null)
+            _MovementState.ExitState(newState);
+        MovementState oldState = _MovementState;
+        _MovementState = newState;
+        _MovementState.EnterState(oldState);
+    }
+    public void EnterState(HandState newState)
+    {
+        if (_HandState != null)
+            _HandState.ExitState(newState);
+        HandState oldState = _HandState;
+        _HandState = newState;
+        _HandState.EnterState(oldState);
+    }
+
+    private void ArrangePlaneSound()
+    {
+        if (this is NPC npc && npc._DistanceToPlayer.sqrMagnitude > 1600f) return; // sqr 1600 real value 40, optimized
+
+        Physics.Raycast(_Transform.position + Vector3.up, -Vector3.up, out RaycastHit hit, 2f, GameManager._Instance._TerrainSolidMask);
+        float speed = GetVelocity().magnitude;
+        if (hit.collider != null)
+        {
+            if (hit.collider.gameObject.layer == LayerMask.NameToLayer("Water"))
+            {
+                if (_walkSoundCounter <= 0f)
+                {
+                    SoundManager._Instance.PlayPlaneSound(PlaneSoundType.Swimming, _Transform.position, speed);
+                    _walkSoundCounter += 1f;
+                }
+            }
+            else if (hit.collider.gameObject.layer == LayerMask.NameToLayer("Terrain"))
+            {
+                if (_walkSoundCounter <= 0f)
+                {
+                    SoundManager._Instance.PlayPlaneSound(GetPlaneSoundTypeFromTerrain(hit), _Transform.position, speed);
+                    _walkSoundCounter += 1f;
+                }
+            }
+            else if (hit.collider.GetComponent<PlaneSound>() != null)
+            {
+                if (_walkSoundCounter <= 0f)
+                {
+                    SoundManager._Instance.PlayPlaneSound(hit.collider.GetComponent<PlaneSound>().PlaneSoundType, _Transform.position, speed);
+                    _walkSoundCounter += 1f;
+                }
+            }
+        }
+        _walkSoundCounter -= Time.deltaTime * 1.65f * speed;
+
+    }
+    private PlaneSoundType GetPlaneSoundTypeFromTerrain(RaycastHit hit)
+    {
+        if (hit.collider == null) return PlaneSoundType.Dirt;
+        Terrain terrain = hit.collider.GetComponent<Terrain>();
+        if (terrain == null) return PlaneSoundType.Dirt;
+
+        Vector3 localPos = hit.transform.InverseTransformPoint(hit.point);
+        int x = Mathf.FloorToInt(localPos.x / terrain.terrainData.size.x * terrain.terrainData.alphamapWidth);
+        int y = Mathf.FloorToInt(localPos.z / terrain.terrainData.size.z * terrain.terrainData.alphamapHeight);
+
+        //Debug.Log(hit.collider.gameObject.GetComponent<TerrainBehaviour>()._SoundTypeMap[x, y]);
+        return hit.collider.gameObject.GetComponent<TerrainBehaviour>()._SoundTypeMap[x, y];
+    }
+
+    private void ArrangeStamina()
+    {
+        if (_IsSprinting)
+        {
+            _Stamina -= Time.deltaTime * 15f;
+        }
+        else if (!_LocomotionSystem.FreeMovementSetting.walkByDefault)
+        {
+            _Stamina -= Time.deltaTime * 2f;
+        }
+        else
+        {
+            _Stamina += Time.deltaTime * 5f;
+        }
+    }
+    public void LookAt(Vector3 pos, float lerpSpeed = 10f)
+    {
+        if (pos == _Transform.position) return;
+
+        _Transform.forward = Vector3.Lerp(_Transform.forward, (pos - _Transform.position).normalized, Time.deltaTime * lerpSpeed);
+        _Transform.eulerAngles = new Vector3(0f, _Transform.eulerAngles.y, 0f);
+    }
+
+    public void Blocked(Damage damage)
+    {
+        MovementStateMethods.Stagger(this, 0.2f, damage._Direction);
+        ChangeAnimation("Blocked");
+    }
+    public void CheckForNearItemHolders(bool isPlayer, out InventoryHolder nearestInventoryHolder, out CarriableObject nearestCarriable)
+    {
+        nearestInventoryHolder = null;
+        nearestCarriable = null;
+        float nearestDistanceForInv = float.MaxValue;
+        float nearestCarriableDistance = float.MaxValue;
+        Collider[] colliders = Physics.OverlapSphere(_Transform.position, 1f, LayerMask.GetMask(new string[] { "Interactable", "Human", "RagdollHitbox", "CarriableObject" }));
+        foreach (var collider in colliders)
+        {
+            if (collider.TryGetComponent(out CarriableObject carriableObject))
+            {
+                CheckForNearInventoriesCommon(carriableObject, ref nearestCarriableDistance, ref nearestCarriable, collider);
+            }
+            if (collider != null && collider.TryGetComponent(out InventoryHolder anotherInventoryHolder))
+            {
+                CheckForNearInventoriesCommon(anotherInventoryHolder, ref nearestDistanceForInv, ref nearestInventoryHolder, collider);
+            }
+            Humanoid human = GetHumanoidFromCollider(collider);
+            if (human != null && human != this)
+            {
+                CheckForNearInventoriesCommon(human._InventoryHolder, ref nearestDistanceForInv, ref nearestInventoryHolder, collider);
+            }
+        }
+
+        if (nearestCarriableDistance < nearestDistanceForInv)
+        {
+            nearestInventoryHolder = null;
+            if (nearestCarriable != null && isPlayer)
+                nearestCarriable.TakeCarriableToInventory(_Inventory);
+        }
+        else
+        {
+            nearestCarriable = null;
+            if (nearestInventoryHolder != null && isPlayer)
+                GameManager._Instance.OpenAnotherInventory(nearestInventoryHolder._Inventory);
+        }
+
+    }
+    private void CheckForNearInventoriesCommon(InventoryHolder holder, ref float nearestDistance, ref InventoryHolder nearestInventoryHolder, Collider collider)
+    {
+        if (nearestInventoryHolder == null || nearestDistance > (collider.transform.position - _Transform.position).magnitude)
+        {
+            nearestDistance = (collider.transform.position - _Transform.position).magnitude;
+            nearestInventoryHolder = holder;
+        }
+    }
+    private void CheckForNearInventoriesCommon(CarriableObject holder, ref float nearestDistance, ref CarriableObject nearestInventoryHolder, Collider collider)
+    {
+        if (nearestInventoryHolder == null || nearestDistance > (collider.transform.position - _Transform.position).magnitude)
+        {
+            nearestDistance = (collider.transform.position - _Transform.position).magnitude;
+            nearestInventoryHolder = holder;
+        }
+    }
+    private Humanoid GetHumanoidFromCollider(Collider collider)
+    {
+        if (collider == null || (!GameManager._Instance._HumanMask.Contains(collider.gameObject.layer) && collider.gameObject.layer != LayerMask.NameToLayer("RagdollHitbox"))) return null;
+        Transform parent = collider.transform;
+        while (parent.parent != null)
+        {
+            parent = parent.parent;
+        }
+        return parent.GetComponent<Humanoid>();
+    }
+    public virtual void TakeDamage(Damage damage)
+    {
+        if (damage._TargetArmor != null)
+            damage._TargetArmor._Durability -= damage._AmountBlocked / (damage._DamageType == DamageType.Cut ? 4f : (damage._DamageType == DamageType.Pierce ? 2.75f : 9f)) * (damage._TargetArmor._IsSteel ? 0.1f : 1f);
+        float bleedingDamage = damage._Amount / 125f;
+        if (damage._DamageType == DamageType.Cut) bleedingDamage = damage._Amount / 75f;
+        else if (damage._DamageType == DamageType.Pierce) bleedingDamage = damage._Amount / 125f;
+        else if (damage._DamageType == DamageType.Crush) bleedingDamage = damage._Amount / 400f;
+        MovementStateMethods.Stagger(this, 1f, damage._Direction);
+        HandStateMethods.PlayHitAnimation(this, damage);
+        _HealthSystem.TakeDamage(damage, bleedingDamage);
+    }
+    public virtual void ProjectileRemoved(CarriableObject carriableObject)
+    {
+        _HealthSystem.TakeDamage(null, 10f);
+    }
+    public virtual void Die()
+    {
+        _IsInCombatMode = false;
+        //IsDead = true; make state unconscious
+        _UmaDynamicAvatar.GetComponent<UMAPhysicsAvatar>().enabled = true;
+    }
+
+}
