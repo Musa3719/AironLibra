@@ -50,7 +50,7 @@ public class Options : MonoBehaviour
         _MusicSlider.value = _MusicVolume;
 
         _IsExpressionPlayerEnabled = false;
-        _IsFootIKEnabled = false;
+        _IsFootIKEnabled = true;
         _IsLeaningEnabled = false;
         _IsLookForCamDistanceEnabled = true;
     }
@@ -105,31 +105,31 @@ public class Options : MonoBehaviour
     public void ChangeExpressionPlayerSetting(bool isOpening)
     {
         _IsExpressionPlayerEnabled = isOpening;
-        for (int i = 0; i < NPCManager._AllNPCs.Count; i++)
+        for (int i = 0; i < NPCManager._Instance._AllNPCs.Count; i++)
         {
-            if (NPCManager._AllNPCs[i]._ExpressionPlayer != null)
+            if (NPCManager._Instance._AllNPCs[i]._ExpressionPlayer != null)
             {
-                NPCManager._AllNPCs[i]._ExpressionPlayer.enabled = isOpening;
-                NPCManager._AllNPCs[i]._ExpressionPlayer.GetComponent<UMA.TwistBones>().enabled = isOpening;
+                NPCManager._Instance._AllNPCs[i]._ExpressionPlayer.enabled = isOpening;
+                NPCManager._Instance._AllNPCs[i]._ExpressionPlayer.GetComponent<UMA.TwistBones>().enabled = isOpening;
             }
         }
     }
     public void ChangeFootIKSetting(bool isOpening)
     {
         _IsFootIKEnabled = isOpening;
-        for (int i = 0; i < NPCManager._AllNPCs.Count; i++)
+        for (int i = 0; i < NPCManager._Instance._AllNPCs.Count; i++)
         {
-            if (NPCManager._AllNPCs[i]._FootIKComponent != null)
-                NPCManager._AllNPCs[i]._FootIKComponent.enabled = isOpening;
+            if (NPCManager._Instance._AllNPCs[i]._FootIKComponent != null)
+                NPCManager._Instance._AllNPCs[i]._FootIKComponent.enabled = isOpening;
         }
     }
     public void ChangeLeaningSetting(bool isOpening)
     {
         _IsLeaningEnabled = isOpening;
-        for (int i = 0; i < NPCManager._AllNPCs.Count; i++)
+        for (int i = 0; i < NPCManager._Instance._AllNPCs.Count; i++)
         {
-            if (NPCManager._AllNPCs[i]._LeaninganimatorComponent != null)
-                NPCManager._AllNPCs[i]._LeaninganimatorComponent.enabled = isOpening;
+            if (NPCManager._Instance._AllNPCs[i]._LeaninganimatorComponent != null)
+                NPCManager._Instance._AllNPCs[i]._LeaninganimatorComponent.enabled = isOpening;
         }
     }
     public void SetGraphicSetting(int number)

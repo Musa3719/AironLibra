@@ -20,7 +20,7 @@ public class CarriableObject : MonoBehaviour
             if (_ItemRefForProjectiles != null)
                 GameManager._Instance.DestroyProjectileFromWorld(this);
             else
-                GameManager._Instance.DestroyEnvironmentPrefabFromWorld(_ItemHandleData);
+                GameManager._Instance.DestroyItemPrefabFromWorld(_ItemHandleData);
         }
         else if (inventory.CanEquipThisItem(item, false))
         {
@@ -28,7 +28,14 @@ public class CarriableObject : MonoBehaviour
             if(_ItemRefForProjectiles != null)
                 GameManager._Instance.DestroyProjectileFromWorld(this);
             else
-                GameManager._Instance.DestroyEnvironmentPrefabFromWorld(_ItemHandleData);
+                GameManager._Instance.DestroyItemPrefabFromWorld(_ItemHandleData);
+        }
+
+        if(_ItemRefForProjectiles != null)
+        {
+            ICanGetHurt hurtable = GameManager._Instance.GetHurtable(transform);
+            if (hurtable != null)
+                hurtable.ProjectileRemoved(this);
         }
     }
 }

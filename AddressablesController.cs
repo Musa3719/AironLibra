@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.AddressableAssets;
 using UnityEngine.ResourceManagement.AsyncOperations;
+using static UnityEditor.PlayerSettings;
 
 public class AddressablesController : MonoBehaviour
 {
@@ -43,7 +44,7 @@ public class AddressablesController : MonoBehaviour
     //public List<GameObject>[,] _NpcListForChunk { get; private set; }
 
     #region Method Parameters For Optimization
-    private List<ItemHandleData> _objectsWillBeSpawned;
+    private List<ItemHandleData> _itemHandlesWillBeSpawned;
     private List<Transform> _objectsParentForSpawn;
     private List<Vector3> _objectPositionsWillBeSpawned;
     private List<Vector3> _objectRotationsWillBeSpawned;
@@ -58,7 +59,7 @@ public class AddressablesController : MonoBehaviour
         _IsChunkUnloading = new bool[GameManager._Instance._NumberOfColumnsForTerrains, GameManager._Instance._NumberOfRowsForTerrains];
         _IsChunkLoadingCoroutines = new Coroutine[GameManager._Instance._NumberOfColumnsForTerrains, GameManager._Instance._NumberOfRowsForTerrains];
         _IsChunkUnloadingCoroutines = new Coroutine[GameManager._Instance._NumberOfColumnsForTerrains, GameManager._Instance._NumberOfRowsForTerrains];
-        _objectsWillBeSpawned = new List<ItemHandleData>();
+        _itemHandlesWillBeSpawned = new List<ItemHandleData>();
     }
     private void Start()
     {
@@ -88,7 +89,7 @@ public class AddressablesController : MonoBehaviour
             var handle = _HandlesForSpawned[x, y][i];
             int index = GameManager._Instance._ItemHandleDatasInChunk[x, y].IndexOf(handle);
             if (index != -1)
-                GameManager._Instance._ItemHandleDatasInChunk[x, y][i]._SpawnHandle = null;
+                GameManager._Instance._ItemHandleDatasInChunk[x, y][i]._MeshSpawnHandle = null;
             if (handle.IsDone)
             {
                 DespawnObj(handle);
@@ -117,22 +118,25 @@ public class AddressablesController : MonoBehaviour
     {
         List<AsyncOperationHandle> allHandles = new List<AsyncOperationHandle>();
         SetAdressablesForSpawn(x, y);
-        if (_objectsWillBeSpawned == null) return allHandles;
-        for (int i = 0; i < _objectsWillBeSpawned.Count; i++)
+        if (_itemHandlesWillBeSpawned == null) return allHandles;
+        for (int i = 0; i < _itemHandlesWillBeSpawned.Count; i++)
         {
-            allHandles.Add(SpawnObj(x, y, i));
+            if (_itemHandlesWillBeSpawned[i]._ItemRef == null)
+                allHandles.Add(SpawnObj(x, y, i, GameManager._Instance._NameToPrefabMesh[_itemHandlesWillBeSpawned[i]._NameForEnvironmentMeshes]));
+            else
+                allHandles.Add(SpawnObj(x, y, i));
         }
 
         return allHandles;
     }
     public void SetAdressablesForSpawn(int x, int y)
     {
-        _objectsWillBeSpawned = GameManager._Instance._ItemHandleDatasInChunk[x, y];
+        _itemHandlesWillBeSpawned = GameManager._Instance._ItemHandleDatasInChunk[x, y];
         _objectPositionsWillBeSpawned = GameManager._Instance._ObjectPositionsInChunk[x, y];
         _objectRotationsWillBeSpawned = GameManager._Instance._ObjectRotationsInChunk[x, y];
         _objectsParentForSpawn = GameManager._Instance._ObjectParentsInChunk[x, y];
     }
-    public AsyncOperationHandle SpawnObj(int x, int y, int i)
+    public AsyncOperationHandle SpawnObj(int x, int y, int i, AssetReferenceGameObject assetReferenceGameObject = null)
     {
         if (_HandlesForSpawned[x, y] == null)
             _HandlesForSpawned[x, y] = new List<AsyncOperationHandle<GameObject>>();
@@ -140,9 +144,12 @@ public class AddressablesController : MonoBehaviour
         Vector3 pos = _objectPositionsWillBeSpawned[i];
         Vector3 angles = _objectRotationsWillBeSpawned[i];
         Transform parentTransform = _objectsParentForSpawn[i];
-        ItemHandleData itemHandleData = _objectsWillBeSpawned[i];
-        AsyncOperationHandle<GameObject> asynchandle = itemHandleData._AssetRef.InstantiateAsync(pos, Quaternion.Euler(angles), parentTransform);
-        itemHandleData._SpawnHandle = asynchandle;
+        ItemHandleData itemHandleData = _itemHandlesWillBeSpawned[i];
+
+        if (assetReferenceGameObject == null)
+            assetReferenceGameObject = itemHandleData._ItemRef._ItemDefinition._AssetRefMesh;
+        AsyncOperationHandle<GameObject> asynchandle = assetReferenceGameObject.InstantiateAsync(pos, Quaternion.Euler(angles), parentTransform);
+        itemHandleData._MeshSpawnHandle = asynchandle;
         _HandlesForSpawned[x, y].Add(asynchandle);
         asynchandle.Completed += (handle) =>
          {
@@ -163,6 +170,17 @@ public class AddressablesController : MonoBehaviour
         return asynchandle;
     }
 
+    public AsyncOperationHandle<GameObject> SpawnConstantColliderToWorld(ItemHandleData itemhandleData, AssetReferenceGameObject colliderToBeSpawned, Vector3 pos, Vector3 angles, Transform parentTransform)
+    {
+        AsyncOperationHandle<GameObject> asyncOperationHandle = colliderToBeSpawned.InstantiateAsync(pos, Quaternion.Euler(angles), parentTransform);
+        asyncOperationHandle.Completed += (handle) => { GetComponent<EntityCollider>()._ItemHandleData = itemhandleData; };
+
+        return asyncOperationHandle;
+    }
+    public void DestroyConstantColliderFromWorld(AsyncOperationHandle<GameObject> asyncOperationHandle)
+    {
+        DespawnObj(asyncOperationHandle);
+    }
     /*public List<AsyncOperationHandle> SpawnNpcs(int x, int y)
     {
         List<AsyncOperationHandle> allHandles = new List<AsyncOperationHandle>();

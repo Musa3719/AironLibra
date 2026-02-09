@@ -8,7 +8,7 @@ public static class ExtensionMethods
     {
         for (int i = 0; i < itemHandleData.Count; i++)
         {
-            if (itemHandleData[i]._SpawnHandle.HasValue && itemHandleData[i]._SpawnHandle.Value.Equals(handle))
+            if (itemHandleData[i]._MeshSpawnHandle.HasValue && itemHandleData[i]._MeshSpawnHandle.Value.Equals(handle))
                 return i;
         }
         return -1;

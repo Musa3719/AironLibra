@@ -40,14 +40,14 @@ public class Door : MonoBehaviour
         if (_IsLocked || _IsOpen) return;
 
         _IsLocked = true;
-        GetComponentInChildren<NavMeshObstacle>().enabled = true;
+        GetComponent<NavMeshObstacle>().enabled = true;
     }
     public void UnlockDoor()
     {
         if (!_IsLocked) return;
 
         _IsLocked = false;
-        GetComponentInChildren<NavMeshObstacle>().enabled = false;
+        GetComponent<NavMeshObstacle>().enabled = false;
     }
 
     private IEnumerator DoorCoroutine(bool isOpening)

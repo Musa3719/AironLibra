@@ -22,6 +22,7 @@ public class GameManager : MonoBehaviour
     public bool _Is3;
     public bool _Is4;
     public bool _Is5;
+    public bool _Is6;
 
     public static GameManager _Instance;
     public float _TerrainDimensionMagnitude => 1024f;
@@ -31,8 +32,9 @@ public class GameManager : MonoBehaviour
     public Transform _RangedAimMesh { get; private set; }
     public GraphicRaycaster _GraphicRaycaster { get; private set; }
 
-    public Dictionary<string, AssetReferenceGameObject> _ItemNameToPrefab;
-    public Dictionary<string, AssetReferenceSprite> _ItemNameToSprite;
+    public Dictionary<string, AssetReferenceGameObject> _NameToPrefabMesh;
+    public Dictionary<string, AssetReferenceGameObject> _NameToPrefabCollider;
+    public Dictionary<string, AssetReferenceSprite> _NameToSprite;
 
     public Dictionary<string, float> _AnimNameToAttackStartTime;
     public Dictionary<string, float> _AnimNameToAttackEndTime;
@@ -71,7 +73,6 @@ public class GameManager : MonoBehaviour
     public GameObject _LoadingObject { get; private set; }
     public Transform _EnvironmentTransform { get; private set; }
     public Transform _NPCHolderTransform { get; private set; }
-    public ObjectPool _NPCPool { get; private set; }
     public InventorySlotUI _InteractMenuSlotUI { get; set; }
     public InventorySlotUI _LastClickedSlotUI { get; set; }
     public InventorySlotUI _InventoryCarryModeSlotUI { get; set; }
@@ -132,7 +133,6 @@ public class GameManager : MonoBehaviour
     private void Awake()
     {
         _Instance = this;
-        NPCManager.Awake();
         _GraphicRaycaster = FindFirstObjectByType<GraphicRaycaster>();
         _fpsValues = new Queue<float>();
         transform.Find("CharacterCreation").GetComponent<CharacterCreation>().Init();
@@ -147,6 +147,7 @@ public class GameManager : MonoBehaviour
         _ObjectPositionsInChunk = new List<Vector3>[_NumberOfColumnsForTerrains, _NumberOfRowsForTerrains];
         _ObjectRotationsInChunk = new List<Vector3>[_NumberOfColumnsForTerrains, _NumberOfRowsForTerrains];
         _ObjectParentsInChunk = new List<Transform>[_NumberOfColumnsForTerrains, _NumberOfRowsForTerrains];
+
         _MainCamera = Camera.main.gameObject;
         _Player = GameObject.FindGameObjectWithTag("Player");
         _MainReflectionProbe = _Player.transform.Find("MainReflectionProbe").GetComponent<ReflectionProbe>();
@@ -182,8 +183,6 @@ public class GameManager : MonoBehaviour
             _StaminaHUDRect = _GameHUD.transform.Find("StaminaBack").Find("Stamina").GetComponent<RectTransform>();
             _HealthInfoHUD = _GameHUD.transform.parent.Find("HealthInfo").gameObject;
             _SaveScreen = GameObject.FindGameObjectWithTag("UI").transform.Find("UIMain").Find("Save").gameObject;
-
-            _NPCPool = transform.Find("NPC_Pool").GetComponent<ObjectPool>();
 
             Transform playerItemList = _InventoryScreen.transform.Find("OwnInventory").Find("ItemList");
             _playerInventoryImages = new Image[playerItemList.childCount];
@@ -243,7 +242,6 @@ public class GameManager : MonoBehaviour
         if (_LevelIndex != 0)
         {
             PredefinedNpcLogic.Init();
-            NPCManager.Start();
             InitDictionaries();
         }
     }
@@ -260,7 +258,6 @@ public class GameManager : MonoBehaviour
         {
             _PlayerPos = _Player.transform.position;
             UpdateMainReflectionProbe();
-            NPCManager.Update();
 
             if (_LastClickedSlotUI != null)
             {
@@ -422,42 +419,59 @@ public class GameManager : MonoBehaviour
 
     public void InitDictionaries()
     {
-        _ItemNameToPrefab = new Dictionary<string, AssetReferenceGameObject>();
-        _ItemNameToPrefab.Add("Punch", AddressablesController._Instance._ItemContainer);
-        _ItemNameToPrefab.Add("Apple", AddressablesController._Instance._ItemContainer);
-        _ItemNameToPrefab.Add("ChestArmor_1", AddressablesController._Instance._ChestArmor_1_Item);
-        _ItemNameToPrefab.Add("LongSword_1", AddressablesController._Instance._LongSword_1_Item);
-        _ItemNameToPrefab.Add("Crossbow", AddressablesController._Instance._Crossbow_Item);
-        _ItemNameToPrefab.Add("SurvivalBow", AddressablesController._Instance._SurvivalBow_Item);
-        _ItemNameToPrefab.Add("HuntingBow", AddressablesController._Instance._HuntingBow_Item);
-        _ItemNameToPrefab.Add("CompositeBow", AddressablesController._Instance._CompositeBow_Item);
-        _ItemNameToPrefab.Add("BoltArrow", AddressablesController._Instance._ItemContainer);
-        _ItemNameToPrefab.Add("Arrow", AddressablesController._Instance._ItemContainer);
-        _ItemNameToPrefab.Add("Backpack", AddressablesController._Instance._Backpack_Item);
-        _ItemNameToPrefab.Add("Apple2", AddressablesController._Instance._ItemContainer);
-        _ItemNameToPrefab.Add("Apple3", AddressablesController._Instance._ItemContainer);
-        _ItemNameToPrefab.Add("Apple4", AddressablesController._Instance._ItemContainer);
-        _ItemNameToPrefab.Add("Apple5", AddressablesController._Instance._ItemContainer);
-        _ItemNameToPrefab.Add("Apple6", AddressablesController._Instance._ItemContainer);
-        //_ItemNameToPrefab.Add("Copper Coin", AddressablesController._Instance._AppleItem);
+        _NameToPrefabMesh = new Dictionary<string, AssetReferenceGameObject>();
+        _NameToPrefabMesh.Add("Punch", AddressablesController._Instance._ItemContainer);
+        _NameToPrefabMesh.Add("Apple", AddressablesController._Instance._ItemContainer);
+        _NameToPrefabMesh.Add("ChestArmor_1", AddressablesController._Instance._ChestArmor_1_Item);
+        _NameToPrefabMesh.Add("LongSword_1", AddressablesController._Instance._LongSword_1_Item);
+        _NameToPrefabMesh.Add("Crossbow", AddressablesController._Instance._Crossbow_Item);
+        _NameToPrefabMesh.Add("SurvivalBow", AddressablesController._Instance._SurvivalBow_Item);
+        _NameToPrefabMesh.Add("HuntingBow", AddressablesController._Instance._HuntingBow_Item);
+        _NameToPrefabMesh.Add("CompositeBow", AddressablesController._Instance._CompositeBow_Item);
+        _NameToPrefabMesh.Add("BoltArrow", AddressablesController._Instance._ItemContainer);
+        _NameToPrefabMesh.Add("Arrow", AddressablesController._Instance._ItemContainer);
+        _NameToPrefabMesh.Add("Backpack", AddressablesController._Instance._Backpack_Item);
+        _NameToPrefabMesh.Add("Apple2", AddressablesController._Instance._ItemContainer);
+        _NameToPrefabMesh.Add("Apple3", AddressablesController._Instance._ItemContainer);
+        _NameToPrefabMesh.Add("Apple4", AddressablesController._Instance._ItemContainer);
+        _NameToPrefabMesh.Add("Apple5", AddressablesController._Instance._ItemContainer);
+        _NameToPrefabMesh.Add("Apple6", AddressablesController._Instance._ItemContainer);
+
+        _NameToPrefabCollider = new Dictionary<string, AssetReferenceGameObject>();
+        _NameToPrefabCollider.Add("Punch", AddressablesController._Instance._ItemContainer);
+        _NameToPrefabCollider.Add("Apple", AddressablesController._Instance._ItemContainer);
+        _NameToPrefabCollider.Add("ChestArmor_1", AddressablesController._Instance._ChestArmor_1_Item);
+        _NameToPrefabCollider.Add("LongSword_1", AddressablesController._Instance._LongSword_1_Item);
+        _NameToPrefabCollider.Add("Crossbow", AddressablesController._Instance._Crossbow_Item);
+        _NameToPrefabCollider.Add("SurvivalBow", AddressablesController._Instance._SurvivalBow_Item);
+        _NameToPrefabCollider.Add("HuntingBow", AddressablesController._Instance._HuntingBow_Item);
+        _NameToPrefabCollider.Add("CompositeBow", AddressablesController._Instance._CompositeBow_Item);
+        _NameToPrefabCollider.Add("BoltArrow", AddressablesController._Instance._ItemContainer);
+        _NameToPrefabCollider.Add("Arrow", AddressablesController._Instance._ItemContainer);
+        _NameToPrefabCollider.Add("Backpack", AddressablesController._Instance._Backpack_Item);
+        _NameToPrefabCollider.Add("Apple2", AddressablesController._Instance._ItemContainer);
+        _NameToPrefabCollider.Add("Apple3", AddressablesController._Instance._ItemContainer);
+        _NameToPrefabCollider.Add("Apple4", AddressablesController._Instance._ItemContainer);
+        _NameToPrefabCollider.Add("Apple5", AddressablesController._Instance._ItemContainer);
+        _NameToPrefabCollider.Add("Apple6", AddressablesController._Instance._ItemContainer);
 
 
-        _ItemNameToSprite = new Dictionary<string, AssetReferenceSprite>();
-        _ItemNameToSprite.Add("Apple", AddressablesController._Instance._Apple_Sprite);
-        _ItemNameToSprite.Add("ChestArmor_1", AddressablesController._Instance._ChestArmor_1_Sprite);
-        _ItemNameToSprite.Add("LongSword_1", AddressablesController._Instance._LongSword_1_Sprite);
-        _ItemNameToSprite.Add("Crossbow", AddressablesController._Instance._Crossbow_Sprite);
-        _ItemNameToSprite.Add("SurvivalBow", AddressablesController._Instance._SurvivalBow_Sprite);
-        _ItemNameToSprite.Add("HuntingBow", AddressablesController._Instance._HuntingBow_Sprite);
-        _ItemNameToSprite.Add("CompositeBow", AddressablesController._Instance._CompositeBow_Sprite);
-        _ItemNameToSprite.Add("BoltArrow", AddressablesController._Instance._Bolt_Sprite);
-        _ItemNameToSprite.Add("Arrow", AddressablesController._Instance._Arrow_Sprite);
-        _ItemNameToSprite.Add("Backpack", AddressablesController._Instance._Backpack_Sprite);
-        _ItemNameToSprite.Add("Apple2", AddressablesController._Instance._Apple_Sprite);
-        _ItemNameToSprite.Add("Apple3", AddressablesController._Instance._Apple_Sprite);
-        _ItemNameToSprite.Add("Apple4", AddressablesController._Instance._Apple_Sprite);
-        _ItemNameToSprite.Add("Apple5", AddressablesController._Instance._Apple_Sprite);
-        _ItemNameToSprite.Add("Apple6", AddressablesController._Instance._Apple_Sprite);
+        _NameToSprite = new Dictionary<string, AssetReferenceSprite>();
+        _NameToSprite.Add("Apple", AddressablesController._Instance._Apple_Sprite);
+        _NameToSprite.Add("ChestArmor_1", AddressablesController._Instance._ChestArmor_1_Sprite);
+        _NameToSprite.Add("LongSword_1", AddressablesController._Instance._LongSword_1_Sprite);
+        _NameToSprite.Add("Crossbow", AddressablesController._Instance._Crossbow_Sprite);
+        _NameToSprite.Add("SurvivalBow", AddressablesController._Instance._SurvivalBow_Sprite);
+        _NameToSprite.Add("HuntingBow", AddressablesController._Instance._HuntingBow_Sprite);
+        _NameToSprite.Add("CompositeBow", AddressablesController._Instance._CompositeBow_Sprite);
+        _NameToSprite.Add("BoltArrow", AddressablesController._Instance._Bolt_Sprite);
+        _NameToSprite.Add("Arrow", AddressablesController._Instance._Arrow_Sprite);
+        _NameToSprite.Add("Backpack", AddressablesController._Instance._Backpack_Sprite);
+        _NameToSprite.Add("Apple2", AddressablesController._Instance._Apple_Sprite);
+        _NameToSprite.Add("Apple3", AddressablesController._Instance._Apple_Sprite);
+        _NameToSprite.Add("Apple4", AddressablesController._Instance._Apple_Sprite);
+        _NameToSprite.Add("Apple5", AddressablesController._Instance._Apple_Sprite);
+        _NameToSprite.Add("Apple6", AddressablesController._Instance._Apple_Sprite);
         //_ItemNameToSprite.Add("Copper Coin", AddressablesController._Instance._AppleSprite);
 
         _AnimNameToAttackStartTime = new Dictionary<string, float>();
@@ -697,13 +711,34 @@ public class GameManager : MonoBehaviour
         int y = (int)(pos.z / _TerrainDimensionMagnitude);
         return new Vector2Int(x, y);
     }
+    public ItemHandleData CreateEnvironmentPrefabToWorld(string name, Transform parent, Vector3 pos, Vector3 angles)
+    {
+        //For Mesh Spawn
+        ItemHandleData itemHandleData = new ItemHandleData();
+        CreateItemPrefabToWorld(itemHandleData, parent, pos, angles);
+        itemHandleData._NameForEnvironmentMeshes = name;
+
+        //For Collider Spawn
+        itemHandleData._ColliderSpawnHandle = AddressablesController._Instance.SpawnConstantColliderToWorld(itemHandleData, _NameToPrefabCollider[name], pos, angles, parent);
+
+        return itemHandleData;
+    }
+    public void DestroyEnvironmentPrefabFromWorld(ItemHandleData itemHandleData)
+    {
+        //For Mesh Destroy
+        DestroyItemPrefabFromWorld(itemHandleData);
+
+        //For Collider Destroy
+        if (itemHandleData._ColliderSpawnHandle.HasValue)
+            AddressablesController._Instance.DestroyConstantColliderFromWorld(itemHandleData._ColliderSpawnHandle.Value);
+    }
     public void CreateNewCarriableObjectToWorld(Item item, Vector3 spawnPos)
     {
         Physics.Raycast(spawnPos, -Vector3.up, out RaycastHit hit, 30f, _TerrainSolidWaterMask);
         spawnPos = hit.point;
-        CreateEnvironmentPrefabToWorld(item._ItemHandleData, _EnvironmentTransform, spawnPos, Vector3.zero);
+        CreateItemPrefabToWorld(item._ItemHandleData, _EnvironmentTransform, spawnPos, Vector3.zero);
     }
-    public void CreateEnvironmentPrefabToWorld(ItemHandleData itemHandleData, Transform parent, Vector3 pos, Vector3 angles)
+    public void CreateItemPrefabToWorld(ItemHandleData itemHandleData, Transform parent, Vector3 pos, Vector3 angles)
     {
         if (itemHandleData == null) { Debug.LogError("itemhandledata is null! cannot create."); return; }
         Vector2Int chunk = GetChunkFromPosition(pos);
@@ -722,9 +757,16 @@ public class GameManager : MonoBehaviour
         _ObjectRotationsInChunk[chunk.x, chunk.y].Add(angles);
         _ObjectParentsInChunk[chunk.x, chunk.y].Add(parent);
 
+        if (itemHandleData._ItemRef != null)
+        {
+            if (itemHandleData._ColliderSpawnHandle.HasValue)
+                Debug.LogError("_ColliderSpawnHandle is not null! : " + itemHandleData._ColliderSpawnHandle.Value.ToString());
+            itemHandleData._ColliderSpawnHandle = AddressablesController._Instance.SpawnConstantColliderToWorld(itemHandleData, itemHandleData._ItemRef._ItemDefinition._AssetRefCollider, pos, angles, parent);
+        }
+
         ReloadChunk(chunk.x, chunk.y);
     }
-    public void DestroyEnvironmentPrefabFromWorld(ItemHandleData itemHandleData)
+    public void DestroyItemPrefabFromWorld(ItemHandleData itemHandleData)
     {
         if (itemHandleData == null) { Debug.LogError("itemhandledata is null! cannot destroy."); return; }
         if (itemHandleData._CarriableObjectReferance == null) { Debug.LogError("_CarriableObjectReferance is null! cannot destroy."); return; }
@@ -742,11 +784,14 @@ public class GameManager : MonoBehaviour
             AddressablesController._Instance.DespawnObj(itemHandleData._SpawnHandle.Value);
             handles[x, y].Remove((itemHandleData._SpawnHandle.Value));
         }*/
-        itemHandleData._SpawnHandle = null;
+        itemHandleData._MeshSpawnHandle = null;
         _ItemHandleDatasInChunk[x, y].RemoveAt(i);
         _ObjectPositionsInChunk[x, y].RemoveAt(i);
         _ObjectRotationsInChunk[x, y].RemoveAt(i);
         _ObjectParentsInChunk[x, y].RemoveAt(i);
+
+        if (itemHandleData._ColliderSpawnHandle.HasValue && itemHandleData._ColliderSpawnHandle.Value.IsValid())
+            AddressablesController._Instance.DestroyConstantColliderFromWorld(itemHandleData._ColliderSpawnHandle.Value);
 
         ReloadChunk(x, y);
     }
@@ -837,7 +882,7 @@ public class GameManager : MonoBehaviour
         WorldHandler._Instance.InitSeasonForNewGame();
 
         Vector3 pos = _Player.transform.position;//change it with player start pos
-        _Player.transform.position = pos;
+        _Player.GetComponent<Humanoid>().SetPosition(pos, true);
 
         if (SaveSystemHandler._Instance._IsSettingPlayerDataForCreation)
         {
@@ -863,16 +908,16 @@ public class GameManager : MonoBehaviour
         int waitCounter = 0;
         for (int i = 0; i < _NumberOfNpcs; i++)
         {
-            createdNpc = Instantiate(PrefabHolder._Instance._NpcParent, _NPCHolderTransform).GetComponent<NPC>();
+            createdNpc = Instantiate(PrefabHolder._Instance._NpcParent, new Vector3(0f, 100f, 0f), Quaternion.identity, _NPCHolderTransform).GetComponent<NPC>();
+            createdNpc.StartCounters(i, _NumberOfNpcs);
             SetRandomNPCValues(createdNpc);
             pos = GetSpawnPosition(createdNpc);
-            createdNpc.transform.position = pos;
+            createdNpc.GetComponent<Humanoid>().SetPosition(pos, true);
             createdNpc._NpcIndex = (ushort)i;
             createdNpc._IsMale = false;
             SetRandomDNA(createdNpc);
             SetRandomWardrobe(createdNpc, createdNpc._IsMale);
 
-            createdNpc.SpawnNPCChild();
             //chunk = GetChunkFromPosition(pos);
             //if (AddressablesController._Instance._NpcListForChunk[chunk.x, chunk.y] == null)
             //AddressablesController._Instance._NpcListForChunk[chunk.x, chunk.y] = new List<GameObject>();
@@ -884,7 +929,7 @@ public class GameManager : MonoBehaviour
                 yield return null;
             }
         }
-        NPCManager._IsReady = true;
+        NPCManager._Instance._IsReady = true;
     }
 
     private void SetRandomNPCValues(NPC npc)
@@ -990,12 +1035,12 @@ public class GameManager : MonoBehaviour
     private void SetRandomWardrobe(Humanoid human, bool isMale)
     {
         human._WardrobeData = new List<UMATextRecipe>();
-        var list = NPCManager.GetRandomHair(isMale);
+        var list = NPCManager._Instance.GetRandomHair(isMale);
         foreach (UMATextRecipe recipe in list)
         {
             human.WearWardrobe(recipe);
         }
-        list = NPCManager.GetRandomCloth(isMale);
+        list = NPCManager._Instance.GetRandomCloth(isMale);
         foreach (UMATextRecipe recipe in list)
         {
             human.WearWardrobe(recipe);
@@ -1150,7 +1195,20 @@ public class GameManager : MonoBehaviour
     {
         return Physics.Raycast(position, Vector3.up, 150f, _TerrainSolidMask);
     }
-
+    public ICanGetHurt GetHurtable(Transform tr)
+    {
+        Transform parent = tr;
+        ICanGetHurt component;
+        while (parent.parent != null)
+        {
+            parent = parent.parent;
+            if (parent.gameObject.TryGetComponent(out component))
+            {
+                return component;
+            }
+        }
+        return null;
+    }
     public void OpenInGameMenuScreen()
     {
         _InGameMenu.SetActive(true);
@@ -1868,7 +1926,7 @@ public class GameManager : MonoBehaviour
     {
         if (!_nameToLoadedSprites.ContainsKey(itemName))
         {
-            var handle = _ItemNameToSprite[itemName].LoadAssetAsync();
+            var handle = _NameToSprite[itemName].LoadAssetAsync();
             handle.Completed += (handle) => { if (!handle.IsValid()) return; image.sprite = handle.Result; };
             _nameToLoadedSprites.Add(itemName, handle);
         }

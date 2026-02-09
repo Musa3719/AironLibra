@@ -37,9 +37,9 @@ public class SaveSystemHandler : MonoBehaviour
         GameData data = new GameData
         {
             _ItemHandleDatasInChunk = GameManager._Instance._ItemHandleDatasInChunk,
-            _ObjectPositionsInChunk = GameManager._Instance._ObjectPositionsInChunk,
-            _ObjectRotationsInChunk = GameManager._Instance._ObjectRotationsInChunk,
-            _ObjectParentsInChunk = GameManager._Instance._ObjectParentsInChunk,
+            _objectPositionsInChunk = GameManager._Instance._ObjectPositionsInChunk,
+            _objectRotationsInChunk = GameManager._Instance._ObjectRotationsInChunk,
+            _objectParentsInChunk = GameManager._Instance._ObjectParentsInChunk,
             _NpcData = npcData,
             _PlayerData = playerData,
             _SnowLevel = Shader.GetGlobalFloat("_Global_SnowLevel"),
@@ -63,9 +63,9 @@ public class SaveSystemHandler : MonoBehaviour
         if (data != null)
         {
             GameManager._Instance._ItemHandleDatasInChunk = data._ItemHandleDatasInChunk;
-            GameManager._Instance._ObjectPositionsInChunk = data._ObjectPositionsInChunk;
-            GameManager._Instance._ObjectRotationsInChunk = data._ObjectRotationsInChunk;
-            GameManager._Instance._ObjectParentsInChunk = data._ObjectParentsInChunk;
+            GameManager._Instance._ObjectPositionsInChunk = data._objectPositionsInChunk;
+            GameManager._Instance._ObjectRotationsInChunk = data._objectRotationsInChunk;
+            GameManager._Instance._ObjectParentsInChunk = data._objectParentsInChunk;
             Shader.SetGlobalFloat("_Global_SnowLevel", data._SnowLevel);
 
             WorldHandler._Instance._Date._DaysInYear = data._DaysInYear;
@@ -78,7 +78,7 @@ public class SaveSystemHandler : MonoBehaviour
             WorldHandler._Instance._Date._Year = data._Year;
             Gaia.ProceduralWorldsGlobalWeather.Instance.Season = data._Season;
 
-            WorldHandler._Instance._Player.transform.position = data._PlayerData._Pos;
+            WorldHandler._Instance._Player.SetPosition(data._PlayerData._Pos, true);
             WorldHandler._Instance._Player.transform.localEulerAngles = data._PlayerData._Rot;
             WorldHandler._Instance._Player._IsMale = data._PlayerData._IsMale;
             WorldHandler._Instance._Player._DnaData = data._PlayerData._DnaData;
@@ -100,7 +100,7 @@ public class SaveSystemHandler : MonoBehaviour
             {
                 npc = allNpcs[i].GetComponent<NPC>();
                 npc._NpcIndex = data._NpcData[i]._NpcIndex;
-                npc.transform.position = data._NpcData[i]._Pos;
+                npc.SetPosition(data._NpcData[i]._Pos, true);
                 npc.transform.localEulerAngles = data._NpcData[i]._Rot;
                 npc._IsMale = data._NpcData[i]._IsMale;
                 npc._DnaData = data._NpcData[i]._DnaData;
@@ -201,9 +201,9 @@ public class SaveSystemHandler : MonoBehaviour
 public class GameData
 {
     public List<ItemHandleData>[,] _ItemHandleDatasInChunk;
-    public List<Vector3>[,] _ObjectPositionsInChunk;
-    public List<Vector3>[,] _ObjectRotationsInChunk;
-    public List<Transform>[,] _ObjectParentsInChunk;
+    public List<Vector3>[,] _objectPositionsInChunk;
+    public List<Vector3>[,] _objectRotationsInChunk;
+    public List<Transform>[,] _objectParentsInChunk;
     public PlayerData _PlayerData;
     public List<NpcData> _NpcData;
     public float _SnowLevel;
